@@ -1,6 +1,6 @@
 /// App navigation: five bottom-nav tabs (each with its own back stack) and
-/// full-screen routes for a project, an agent chat and a new task, pushed on
-/// the root navigator so they cover the nav bar.
+/// full-screen routes for a project, an agent chat, a new task and a to-do
+/// list, pushed on the root navigator so they cover the nav bar.
 library;
 
 import 'package:flutter/material.dart';
@@ -15,6 +15,7 @@ import '../features/projects/projects_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/tasks/new_task_screen.dart';
 import '../features/tasks/tasks_screen.dart';
+import '../features/todos/todo_list_screen.dart';
 import 'shell_scaffold.dart';
 
 abstract final class AppRoutes {
@@ -33,6 +34,8 @@ abstract final class AppRoutes {
       queryParameters: query.isEmpty ? null : query,
     ).toString();
   }
+
+  static String todoList(String id) => '/list/$id';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -66,6 +69,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/agent/:id',
         builder: (context, state) =>
             AgentChatScreen(agentId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/list/:id',
+        builder: (context, state) =>
+            TodoListScreen(listId: state.pathParameters['id']!),
       ),
     ],
   );

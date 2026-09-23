@@ -11,16 +11,24 @@ import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
+import '../../widgets/sheets/todo_list_sheet.dart';
 import '../../widgets/status/status_badge.dart';
 import '../../widgets/status/status_visuals.dart';
 import '../../widgets/task_card.dart';
+import '../todos/todo_lists_view.dart';
 
-/// Tasks tab: the queue grouped by state, with finished work tucked away in a
-/// collapsible "Done" section. Phones stack the groups; wide screens show
-/// Active, Waiting and Backlog as kanban columns.
-class TasksScreen extends ConsumerWidget {
+/// Tasks tab with two views picked by chips under the header: the agent queue
+/// grouped by state, with finished work tucked away in a collapsible "Done"
+/// section, and the user's own to-do lists. Phones stack the queue groups;
+/// wide screens show Active, Waiting and Backlog as kanban columns.
+class TasksScreen extends ConsumerStatefulWidget {
   const TasksScreen({super.key});
 
+  @override
+  ConsumerState<TasksScreen> createState() => _TasksScreenState();
+}
+
+class _TasksScreenState extends ConsumerState<TasksScreen> {
   /// Content width from which the open groups become side-by-side columns.
   static const _kanbanWidth = 900.0;
 
@@ -30,82 +38,129 @@ class TasksScreen extends ConsumerWidget {
     ('Backlog', TaskState.backlog, 'The backlog is empty.'),
   ];
 
+  bool _showLists = false;
+
+  Future<void> _newList() async {
+    final id = await showTodoListSheet(context);
+    if (id != null && mounted) context.push(AppRoutes.todoList(id));
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final byState = ref.watch(tasksByStateProvider);
 
     return AppPage(
       title: 'Tasks',
       icon: Icons.checklist,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoutes.newTask()),
-        icon: const Icon(Icons.add),
-        label: const Text('New task'),
-      ),
+      floatingActionButton: _showLists
+          ? FloatingActionButton.extended(
+              key: const ValueKey('new-list'),
+              onPressed: _newList,
+              icon: const Icon(Icons.playlist_add),
+              label: const Text('New list'),
+            )
+          : FloatingActionButton.extended(
+              key: const ValueKey('new-task'),
+              onPressed: () => context.push(AppRoutes.newTask()),
+              icon: const Icon(Icons.add),
+              label: const Text('New task'),
+            ),
       slivers: [
         SliverToBoxAdapter(
-          child: AsyncValueView(
-            ref.watch(tasksProvider),
-            data: (_) {
-              final done =
-                  [
-                    ...?byState[TaskState.completed],
-                    ...?byState[TaskState.failed],
-                  ]..sort(
-                    (a, b) => (b.completedAt ?? b.updatedAt).compareTo(
-                      a.completedAt ?? a.updatedAt,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(
+              children: [
+                for (final (lists, label, icon) in [
+                  (false, 'Agent queue', Icons.smart_toy_outlined),
+                  (true, 'My lists', Icons.checklist),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      avatar: Icon(
+                        icon,
+                        size: 18,
+                        color: _showLists == lists
+                            ? Theme.of(context).colorScheme.onInverseSurface
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      label: Text(label),
+                      selected: _showLists == lists,
+                      onSelected: (_) => setState(() => _showLists = lists),
                     ),
-                  );
-
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= _kanbanWidth;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _CountPills(byState: byState, doneCount: done.length),
-                      if (wide)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (final (i, (title, state, emptyText))
-                                  in _openSections.indexed) ...[
-                                if (i > 0) const SizedBox(width: 12),
-                                Expanded(
-                                  child: _KanbanColumn(
-                                    title: title,
-                                    state: state,
-                                    tasks: byState[state] ?? const [],
-                                    emptyText: emptyText,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        )
-                      else
-                        for (final (title, state, emptyText)
-                            in _openSections) ...[
-                          SectionHeader(
-                            title,
-                            count: byState[state]?.length ?? 0,
-                          ),
-                          _TaskList(
-                            tasks: byState[state] ?? const [],
-                            emptyText: emptyText,
-                          ),
-                        ],
-                      const SizedBox(height: 12),
-                      _DoneSection(done: done),
-                    ],
-                  );
-                },
-              );
-            },
+                  ),
+              ],
+            ),
           ),
         ),
+        if (_showLists)
+          const SliverToBoxAdapter(child: TodoListsView())
+        else
+          SliverToBoxAdapter(
+            child: AsyncValueView(
+              ref.watch(tasksProvider),
+              data: (_) {
+                final done =
+                    [
+                      ...?byState[TaskState.completed],
+                      ...?byState[TaskState.failed],
+                    ]..sort(
+                      (a, b) => (b.completedAt ?? b.updatedAt).compareTo(
+                        a.completedAt ?? a.updatedAt,
+                      ),
+                    );
+
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth >= _kanbanWidth;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _CountPills(byState: byState, doneCount: done.length),
+                        if (wide)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final (i, (title, state, emptyText))
+                                    in _openSections.indexed) ...[
+                                  if (i > 0) const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _KanbanColumn(
+                                      title: title,
+                                      state: state,
+                                      tasks: byState[state] ?? const [],
+                                      emptyText: emptyText,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          )
+                        else
+                          for (final (title, state, emptyText)
+                              in _openSections) ...[
+                            SectionHeader(
+                              title,
+                              count: byState[state]?.length ?? 0,
+                            ),
+                            _TaskList(
+                              tasks: byState[state] ?? const [],
+                              emptyText: emptyText,
+                            ),
+                          ],
+                        const SizedBox(height: 12),
+                        _DoneSection(done: done),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ),
       ],
     );
   }
