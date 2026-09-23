@@ -13,6 +13,7 @@ import '../../utils/time_format.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/prompt_bar.dart';
+import '../../widgets/sheets/app_sheet.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
 import '../../widgets/status/agent_avatar.dart';
 import '../../widgets/status/status_badge.dart';
@@ -439,14 +440,10 @@ class _WorkingBanner extends ConsumerWidget {
 /// this one so back still returns to where the chat was opened from.
 Future<void> _showAgentSwitcher(BuildContext context, String currentId) {
   final router = GoRouter.of(context);
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    useRootNavigator: true,
-    isScrollControlled: true,
-    useSafeArea: true,
     builder: (sheetContext) => Consumer(
       builder: (context, ref, _) {
-        final theme = Theme.of(context);
         final agents = ref.watch(agentsProvider).value ?? const [];
         return SafeArea(
           top: false,
@@ -454,9 +451,9 @@ Future<void> _showAgentSwitcher(BuildContext context, String currentId) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                child: Text('Chat with', style: theme.textTheme.titleLarge),
+              const SheetHeader(
+                'Chat with',
+                padding: EdgeInsets.fromLTRB(24, 0, 16, 8),
               ),
               Flexible(
                 child: ListView(

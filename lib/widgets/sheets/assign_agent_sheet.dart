@@ -6,6 +6,7 @@ import '../../providers/backend_providers.dart';
 import '../status/agent_avatar.dart';
 import '../status/status_badge.dart';
 import '../status/status_visuals.dart';
+import 'app_sheet.dart';
 
 /// Lets the user point an agent at a project folder and optionally a task.
 /// Any of [agentId], [projectId] and [taskId] can be preselected.
@@ -15,11 +16,8 @@ Future<void> showAssignAgentSheet(
   String? projectId,
   String? taskId,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    useSafeArea: true,
     builder: (context) => _AssignAgentSheet(
       agentId: agentId,
       projectId: projectId,
@@ -149,14 +147,11 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
+              SheetHeader(
+                widget.agentId != null && agent != null
+                    ? 'Assign ${agent.name}'
+                    : 'Assign agent',
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  widget.agentId != null && agent != null
-                      ? 'Assign ${agent.name}'
-                      : 'Assign agent',
-                  style: theme.textTheme.titleLarge,
-                ),
               ),
               const SizedBox(height: 8),
               if (widget.agentId == null)

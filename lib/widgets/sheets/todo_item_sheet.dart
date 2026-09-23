@@ -8,6 +8,7 @@ import '../../providers/backend_providers.dart';
 import '../../utils/time_format.dart';
 import '../common.dart';
 import '../status/status_visuals.dart';
+import 'app_sheet.dart';
 
 /// Adds an item to [listId], or edits the item with [itemId]: title, notes,
 /// tagged projects and agents, and an optional start and due date. The item
@@ -17,11 +18,8 @@ Future<void> showTodoItemSheet(
   required String listId,
   String? itemId,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    useSafeArea: true,
     builder: (context) => _TodoItemSheet(listId: listId, itemId: itemId),
   );
 }
@@ -179,10 +177,7 @@ class _TodoItemSheetState extends ConsumerState<_TodoItemSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _existing == null ? 'New item' : 'Edit item',
-                style: theme.textTheme.titleLarge,
-              ),
+              SheetHeader(_existing == null ? 'New item' : 'Edit item'),
               const SizedBox(height: 16),
               TextField(
                 controller: _title,

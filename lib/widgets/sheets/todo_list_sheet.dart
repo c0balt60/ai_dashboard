@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/backend_providers.dart';
+import 'app_sheet.dart';
 
 /// Creates a to-do list, or renames the one with [listId]. Resolves to the
 /// id of the new list, or null when renaming or dismissed.
 Future<String?> showTodoListSheet(BuildContext context, {String? listId}) {
-  return showModalBottomSheet<String>(
+  return showAppSheet<String>(
     context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    useSafeArea: true,
     builder: (context) => _TodoListSheet(listId: listId),
   );
 }
@@ -59,7 +57,6 @@ class _TodoListSheetState extends ConsumerState<_TodoListSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
@@ -70,10 +67,7 @@ class _TodoListSheetState extends ConsumerState<_TodoListSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _isRename ? 'Rename list' : 'New list',
-                style: theme.textTheme.titleLarge,
-              ),
+              SheetHeader(_isRename ? 'Rename list' : 'New list'),
               const SizedBox(height: 16),
               TextField(
                 controller: _title,

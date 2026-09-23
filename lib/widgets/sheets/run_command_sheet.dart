@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/backend_providers.dart';
+import 'app_sheet.dart';
 
 /// Runs a shell command in a project folder on the PC and shows its output.
 Future<void> showRunCommandSheet(BuildContext context, String projectId) {
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    useSafeArea: true,
     builder: (_) => _RunCommandSheet(projectId),
   );
 }
@@ -103,7 +101,7 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Run command', style: theme.textTheme.titleLarge),
+              const SheetHeader('Run command'),
               if (project != null)
                 Text(
                   project.path,

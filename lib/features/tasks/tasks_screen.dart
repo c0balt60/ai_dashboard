@@ -10,6 +10,7 @@ import '../../utils/time_format.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
+import '../../widgets/sheets/app_sheet.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
 import '../../widgets/sheets/todo_list_sheet.dart';
 import '../../widgets/status/status_badge.dart';
@@ -404,11 +405,8 @@ class _DoneSection extends StatelessWidget {
 }
 
 Future<void> _showTaskDetails(BuildContext context, String taskId) {
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    useSafeArea: true,
     builder: (context) => _TaskDetailsSheet(taskId),
   );
 }
@@ -471,18 +469,12 @@ class _TaskDetailsSheet extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(task.title, style: theme.textTheme.titleLarge),
-                ),
-                const SizedBox(width: 12),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: StatusBadge(visual),
-                ),
-              ],
+            SheetHeader(
+              task.title,
+              trailing: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: StatusBadge(visual),
+              ),
             ),
             const SizedBox(height: 12),
             _DetailRow(
