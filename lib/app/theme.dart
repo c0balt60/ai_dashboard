@@ -24,8 +24,8 @@ class StatusColors extends ThemeExtension<StatusColors> {
 
   static const light = StatusColors(
     running: Color(0xFF1E6FE8),
-    waiting: Color(0xFFB26A00),
-    completed: Color(0xFF1E8E3E),
+    waiting: Color(0xFF8A5300),
+    completed: Color(0xFF17753A),
     failed: Color(0xFFD93025),
     idle: Color(0xFF6B7280),
   );
@@ -187,7 +187,12 @@ ThemeData buildTheme(Brightness brightness) {
     chipTheme: ChipThemeData(
       showCheckmark: false,
       shape: const StadiumBorder(),
-      side: BorderSide.none,
+      // The outline keeps unselected chips visible on card-colored sheets.
+      side: WidgetStateBorderSide.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? BorderSide.none
+            : BorderSide(color: scheme.outlineVariant),
+      ),
       color: selected(scheme.inverseSurface, surfaces.card),
       labelStyle: text.labelLarge?.copyWith(
         fontWeight: FontWeight.w600,
