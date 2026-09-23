@@ -18,19 +18,27 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Monitor and control the AI coding agents running on your PC.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F3FA">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121318">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="ai_dashboard">
+  <meta name="apple-mobile-web-app-title" content="Agents">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>ai_dashboard</title>
+  <title>Agent Dashboard</title>
   <link rel="manifest" href="manifest.json">
+  <!-- Matches the app backdrop so there is no white flash while loading. -->
+  <style>
+    body { margin: 0; background: #F3F3FA; }
+    @media (prefers-color-scheme: dark) { body { background: #121318; } }
+  </style>
 </head>
 <body>
   <!--
