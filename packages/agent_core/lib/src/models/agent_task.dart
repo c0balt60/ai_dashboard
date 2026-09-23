@@ -1,10 +1,16 @@
 import 'enums.dart';
+import 'json.dart';
 
 class TaskStep {
   const TaskStep(this.title, {this.done = false});
 
+  factory TaskStep.fromJson(Json json) =>
+      TaskStep(json['title'] as String, done: json['done'] as bool? ?? false);
+
   final String title;
   final bool done;
+
+  Json toJson() => {'title': title, 'done': done};
 }
 
 class AgentTask {
@@ -21,6 +27,19 @@ class AgentTask {
     this.completedAt,
   });
 
+  factory AgentTask.fromJson(Json json) => AgentTask(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    projectId: json['projectId'] as String,
+    state: TaskState.values.byName(json['state'] as String),
+    createdAt: decodeTime(json['createdAt']),
+    updatedAt: decodeTime(json['updatedAt']),
+    agentId: json['agentId'] as String?,
+    progress: (json['progress'] as num? ?? 0).toDouble(),
+    steps: decodeList(json['steps'], TaskStep.fromJson),
+    completedAt: decodeTimeOrNull(json['completedAt']),
+  );
+
   final String id;
   final String title;
   final String projectId;
@@ -34,6 +53,19 @@ class AgentTask {
   final DateTime? completedAt;
 
   bool get isDone => state == TaskState.completed || state == TaskState.failed;
+
+  Json toJson() => {
+    'id': id,
+    'title': title,
+    'projectId': projectId,
+    'agentId': ?agentId,
+    'state': state.name,
+    'progress': progress,
+    'steps': [for (final s in steps) s.toJson()],
+    'createdAt': encodeTime(createdAt),
+    'updatedAt': encodeTime(updatedAt),
+    if (completedAt case final t?) 'completedAt': encodeTime(t),
+  };
 
   AgentTask copyWith({
     TaskState? state,

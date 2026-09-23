@@ -1,6 +1,5 @@
-import 'package:ai_dashboard/data/backend/mock_backend.dart';
-import 'package:ai_dashboard/data/models/models.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:agent_core/agent_core.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('sendPrompt runs the agent, then posts a reply and waits', () async {

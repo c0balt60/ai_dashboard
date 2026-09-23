@@ -2,11 +2,8 @@
 /// data. Screens should watch these rather than the backend directly.
 library;
 
+import 'package:agent_core/agent_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../data/backend/agent_backend.dart';
-import '../data/backend/mock_backend.dart';
-import '../data/models/models.dart';
 
 final backendProvider = Provider<AgentBackend>((ref) {
   final backend = MockAgentBackend();

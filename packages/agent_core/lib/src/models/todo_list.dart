@@ -1,3 +1,5 @@
+import 'json.dart';
+
 /// A user-written reminder, tagged with the projects and agents it concerns.
 ///
 /// Unlike an [AgentTask] it is never run on the PC; it is a note to self that
@@ -16,6 +18,19 @@ class TodoItem {
     this.completedAt,
   });
 
+  factory TodoItem.fromJson(Json json) => TodoItem(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    createdAt: decodeTime(json['createdAt']),
+    note: json['note'] as String? ?? '',
+    done: json['done'] as bool? ?? false,
+    projectIds: decodeStrings(json['projectIds']),
+    agentIds: decodeStrings(json['agentIds']),
+    startDate: decodeDayOrNull(json['startDate']),
+    dueDate: decodeDayOrNull(json['dueDate']),
+    completedAt: decodeTimeOrNull(json['completedAt']),
+  );
+
   final String id;
   final String title;
   final String note;
@@ -31,6 +46,19 @@ class TodoItem {
       !done &&
       dueDate != null &&
       dueDate!.isBefore(DateTime(now.year, now.month, now.day));
+
+  Json toJson() => {
+    'id': id,
+    'title': title,
+    'note': note,
+    'done': done,
+    'projectIds': projectIds,
+    'agentIds': agentIds,
+    if (startDate case final d?) 'startDate': encodeDay(d),
+    if (dueDate case final d?) 'dueDate': encodeDay(d),
+    'createdAt': encodeTime(createdAt),
+    if (completedAt case final t?) 'completedAt': encodeTime(t),
+  };
 
   TodoItem copyWith({
     String? title,
@@ -67,6 +95,14 @@ class TodoList {
     this.items = const [],
   });
 
+  factory TodoList.fromJson(Json json) => TodoList(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    createdAt: decodeTime(json['createdAt']),
+    updatedAt: decodeTime(json['updatedAt']),
+    items: decodeList(json['items'], TodoItem.fromJson),
+  );
+
   final String id;
   final String title;
   final DateTime createdAt;
@@ -88,6 +124,14 @@ class TodoList {
     items.map((i) => i.dueDate ?? i.startDate),
     (a, b) => a.isAfter(b),
   );
+
+  Json toJson() => {
+    'id': id,
+    'title': title,
+    'createdAt': encodeTime(createdAt),
+    'updatedAt': encodeTime(updatedAt),
+    'items': [for (final i in items) i.toJson()],
+  };
 
   TodoList copyWith({
     String? title,

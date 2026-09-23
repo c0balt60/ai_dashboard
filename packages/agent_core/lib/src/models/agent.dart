@@ -1,4 +1,5 @@
 import 'enums.dart';
+import 'json.dart';
 
 class Agent {
   const Agent({
@@ -14,6 +15,19 @@ class Agent {
     this.currentTaskId,
   });
 
+  factory Agent.fromJson(Json json) => Agent(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    type: AgentType.values.byName(json['type'] as String),
+    status: AgentStatus.values.byName(json['status'] as String),
+    activity: json['activity'] as String? ?? '',
+    lastActive: decodeTime(json['lastActive']),
+    projectId: json['projectId'] as String?,
+    workingDir: json['workingDir'] as String?,
+    branch: json['branch'] as String?,
+    currentTaskId: json['currentTaskId'] as String?,
+  );
+
   final String id;
   final String name;
   final AgentType type;
@@ -28,6 +42,19 @@ class Agent {
 
   bool get isBusy =>
       status == AgentStatus.running || status == AgentStatus.waiting;
+
+  Json toJson() => {
+    'id': id,
+    'name': name,
+    'type': type.name,
+    'status': status.name,
+    'activity': activity,
+    'lastActive': encodeTime(lastActive),
+    'projectId': ?projectId,
+    'workingDir': ?workingDir,
+    'branch': ?branch,
+    'currentTaskId': ?currentTaskId,
+  };
 
   Agent copyWith({
     AgentStatus? status,

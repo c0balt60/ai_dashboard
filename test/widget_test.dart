@@ -1,13 +1,12 @@
+import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard/app/app.dart';
 import 'package:ai_dashboard/app/router.dart';
-import 'package:ai_dashboard/data/backend/mock_backend.dart';
 import 'package:ai_dashboard/features/agents/agent_chat_screen.dart';
 import 'package:ai_dashboard/features/agents/agents_screen.dart';
 import 'package:ai_dashboard/features/dashboard/dashboard_screen.dart';
 import 'package:ai_dashboard/features/projects/project_dashboard_screen.dart';
 import 'package:ai_dashboard/features/projects/projects_screen.dart';
 import 'package:ai_dashboard/features/settings/settings_screen.dart';
-import 'package:ai_dashboard/data/models/models.dart';
 import 'package:ai_dashboard/features/tasks/new_task_screen.dart';
 import 'package:ai_dashboard/features/tasks/tasks_screen.dart';
 import 'package:ai_dashboard/features/todos/todo_list_screen.dart';
