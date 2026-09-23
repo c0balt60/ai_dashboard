@@ -46,16 +46,19 @@ class TaskCard extends ConsumerWidget {
                         children: [
                           StatusDot(visual, size: 8),
                           const SizedBox(width: 4),
-                          Text(
-                            agent == null
-                                ? 'Unassigned'
-                                : '(${agent.type.shortLabel}) ${agent.name}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: visual.color,
-                              fontWeight: FontWeight.w600,
+                          Expanded(
+                            child: Text(
+                              agent == null
+                                  ? 'Unassigned'
+                                  : '(${agent.type.shortLabel}) ${agent.name}',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: visual.color,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           Text(
                             timeAgo(task.completedAt ?? task.updatedAt),
                             style: muted,
