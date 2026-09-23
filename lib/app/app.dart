@@ -6,6 +6,10 @@ import '../providers/settings_provider.dart';
 import 'router.dart';
 import 'theme.dart';
 
+/// Shows snackbars from outside the widget tree, such as backend errors that
+/// no screen awaited.
+final rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class App extends ConsumerWidget {
   const App({super.key});
 
@@ -15,6 +19,7 @@ class App extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Agent Dashboard',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: rootMessengerKey,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: themeMode,

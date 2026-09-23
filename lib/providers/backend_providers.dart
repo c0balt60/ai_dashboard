@@ -5,10 +5,29 @@ library;
 import 'package:agent_core/agent_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/backend/http_backend.dart';
+import 'settings_provider.dart';
+
+/// The mock or the PC server, following the connection settings. Changing
+/// the mode, URL or token swaps the backend and every stream restarts.
 final backendProvider = Provider<AgentBackend>((ref) {
-  final backend = MockAgentBackend();
+  final (mode, url, token) = ref.watch(
+    settingsProvider.select(
+      (s) => (s.connectionMode, s.serverUrl, s.authToken),
+    ),
+  );
+  final AgentBackend backend =
+      mode == ConnectionMode.server && isValidServerUrl(url)
+      ? HttpAgentBackend(baseUrl: Uri.parse(url), token: token)
+      : MockAgentBackend(simulate: ref.read(settingsProvider).simulate);
   ref.onDispose(backend.dispose);
   return backend;
+});
+
+/// The live link to the PC server, or null while showing demo data.
+final connectionStatusProvider = StreamProvider<ConnectionStatus?>((ref) {
+  final backend = ref.watch(backendProvider);
+  return backend is HttpAgentBackend ? backend.connection : Stream.value(null);
 });
 
 final agentsProvider = StreamProvider<List<Agent>>(
