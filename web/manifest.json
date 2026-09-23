@@ -1,12 +1,12 @@
 {
-    "name": "ai_dashboard",
-    "short_name": "ai_dashboard",
+    "name": "Agent Dashboard",
+    "short_name": "Agents",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#F3F3FA",
+    "theme_color": "#4F6BED",
+    "description": "Monitor and control the AI coding agents running on your PC.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

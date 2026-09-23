@@ -44,6 +44,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   void setThemeMode(ThemeMode mode) => state = state.copyWith(themeMode: mode);
 
+  /// Flips between light and dark based on what is showing now, so the first
+  /// tap while following the system theme always changes something visible.
+  void toggleBrightness(Brightness current) => setThemeMode(
+    current == Brightness.dark ? ThemeMode.light : ThemeMode.dark,
+  );
+
   void setServerUrl(String url) => state = state.copyWith(serverUrl: url);
 
   void setSimulate(bool value) {

@@ -4,6 +4,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../app/theme.dart';
+
 class SectionHeader extends StatelessWidget {
   const SectionHeader(
     this.title, {
@@ -11,7 +13,7 @@ class SectionHeader extends StatelessWidget {
     this.count,
     this.actionLabel,
     this.onAction,
-    this.padding = const EdgeInsets.fromLTRB(16, 20, 8, 8),
+    this.padding = const EdgeInsets.fromLTRB(16, 24, 4, 8),
   });
 
   final String title;
@@ -33,7 +35,7 @@ class SectionHeader extends StatelessWidget {
                 Flexible(
                   child: Text(
                     title,
-                    style: theme.textTheme.titleMedium,
+                    style: theme.textTheme.titleLarge,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -55,7 +57,19 @@ class SectionHeader extends StatelessWidget {
             ),
           ),
           if (actionLabel != null)
-            TextButton(onPressed: onAction, child: Text(actionLabel!)),
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.onSurfaceVariant,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(actionLabel!),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -113,6 +127,8 @@ class AsyncValueView<T> extends StatelessWidget {
   }
 }
 
+/// Pastel tile tinted with its accent color: a label, a big value and a
+/// caption, with the icon in a round badge.
 class StatTile extends StatelessWidget {
   const StatTile({
     super.key,
@@ -136,32 +152,42 @@ class StatTile extends StatelessWidget {
     final theme = Theme.of(context);
     final accent = color ?? theme.colorScheme.primary;
     return Card(
+      color: AppSurfaces.of(context).tint(accent, theme.brightness),
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(icon, size: 18, color: accent),
-                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       label,
-                      style: theme.textTheme.labelMedium,
+                      style: theme.textTheme.titleSmall,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: accent.withValues(alpha: 0.18),
+                    ),
+                    child: Icon(icon, size: 18, color: accent),
+                  ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                value,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              const SizedBox(height: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(value, style: theme.textTheme.headlineMedium),
               ),
               if (caption != null)
                 Text(
@@ -190,10 +216,10 @@ class InfoChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
