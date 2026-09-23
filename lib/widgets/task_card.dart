@@ -31,77 +31,67 @@ class TaskCard extends ConsumerWidget {
     return Card(
       child: InkWell(
         onTap: onTap,
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(width: 4, color: visual.color),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          StatusDot(visual, size: 8),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              agent == null
-                                  ? 'Unassigned'
-                                  : '(${agent.type.shortLabel}) ${agent.name}',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: visual.color,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            timeAgo(task.completedAt ?? task.updatedAt),
-                            style: muted,
-                          ),
-                        ],
+              Row(
+                children: [
+                  StatusDot(visual, size: 8),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      agent == null
+                          ? 'Unassigned'
+                          : '(${agent.type.shortLabel}) ${agent.name}',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: visual.color,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        task.title,
-                        style: theme.textTheme.titleSmall,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (showProject && project != null) ...[
-                        const SizedBox(height: 2),
-                        Text('in ${project.name}', style: muted),
-                      ],
-                      if (task.state == TaskState.active) ...[
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: task.progress,
-                                  minHeight: 6,
-                                  color: visual.color,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              '${(task.progress * 100).round()}%',
-                              style: theme.textTheme.labelMedium,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Text(
+                    timeAgo(task.completedAt ?? task.updatedAt),
+                    style: muted,
+                  ),
+                ],
               ),
+              const SizedBox(height: 6),
+              Text(
+                task.title,
+                style: theme.textTheme.titleSmall,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (showProject && project != null) ...[
+                const SizedBox(height: 2),
+                Text('in ${project.name}', style: muted),
+              ],
+              if (task.state == TaskState.active) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: task.progress,
+                          minHeight: 8,
+                          color: visual.color,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${(task.progress * 100).round()}%',
+                      style: theme.textTheme.labelMedium,
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

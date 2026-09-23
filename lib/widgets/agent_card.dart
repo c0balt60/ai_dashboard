@@ -39,7 +39,7 @@ class AgentCard extends ConsumerWidget {
             children: [
               Text(
                 agent.name,
-                style: theme.textTheme.titleSmall,
+                style: theme.textTheme.titleMedium,
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
@@ -61,20 +61,20 @@ class AgentCard extends ConsumerWidget {
         child: InkWell(
           onTap: onTap ?? () => context.push(AppRoutes.agent(agent.id)),
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 header,
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Text(
                   agent.activity,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium,
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     if (project != null)
