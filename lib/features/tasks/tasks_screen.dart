@@ -11,7 +11,6 @@ import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
-import '../../widgets/sheets/new_task_sheet.dart';
 import '../../widgets/status/status_badge.dart';
 import '../../widgets/status/status_visuals.dart';
 import '../../widgets/task_card.dart';
@@ -39,7 +38,7 @@ class TasksScreen extends ConsumerWidget {
       title: 'Tasks',
       icon: Icons.checklist,
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showNewTaskSheet(context),
+        onPressed: () => context.push(AppRoutes.newTask()),
         icon: const Icon(Icons.add),
         label: const Text('New task'),
       ),

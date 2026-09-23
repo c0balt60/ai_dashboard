@@ -13,7 +13,6 @@ import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/prompt_bar.dart';
-import '../../widgets/sheets/new_task_sheet.dart';
 import '../../widgets/status/status_visuals.dart';
 
 final _pingProvider = FutureProvider.autoDispose<Duration>(
@@ -40,7 +39,7 @@ class DashboardScreen extends ConsumerWidget {
         HeaderAction(
           icon: Icons.add,
           tooltip: 'New task',
-          onPressed: () => showNewTaskSheet(context),
+          onPressed: () => context.push(AppRoutes.newTask()),
         ),
       ],
       onRefresh: () => ref.refresh(_pingProvider.future),

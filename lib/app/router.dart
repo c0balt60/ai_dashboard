@@ -1,6 +1,6 @@
 /// App navigation: five bottom-nav tabs (each with its own back stack) and
-/// full-screen detail routes for a project and an agent chat, pushed on the
-/// root navigator so they cover the nav bar.
+/// full-screen routes for a project, an agent chat and a new task, pushed on
+/// the root navigator so they cover the nav bar.
 library;
 
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import '../features/dashboard/dashboard_screen.dart';
 import '../features/projects/project_dashboard_screen.dart';
 import '../features/projects/projects_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/tasks/new_task_screen.dart';
 import '../features/tasks/tasks_screen.dart';
 import 'shell_scaffold.dart';
 
@@ -25,6 +26,8 @@ abstract final class AppRoutes {
 
   static String project(String id) => '/project/$id';
   static String agent(String id) => '/agent/$id';
+  static String newTask({String? projectId}) =>
+      projectId == null ? '/new-task' : '/new-task?project=$projectId';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -45,6 +48,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/project/:id',
         builder: (context, state) =>
             ProjectDashboardScreen(projectId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/new-task',
+        builder: (context, state) =>
+            NewTaskScreen(projectId: state.uri.queryParameters['project']),
       ),
       GoRoute(
         path: '/agent/:id',
