@@ -23,7 +23,8 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 | Project Dashboard | `/project/:id` (full screen) | Tabs: Overview (agents, branch, current task progress and steps), Tests (runs with failing tests), History (past tasks and activity log). A FAB opens "Run command" and an app-bar action opens "Assign agent" |
 | Agents | `/agents` (tab) | Status filter chips and agent cards |
 | Agent Screen (chat) | `/agent/:id` (full screen) | Centered agent title (tap to switch agent) with status pill, collapsible "Currently working on" banner, greeting with suggestion pills while empty, chat bubbles, typing indicator, quick-prompt chips, composer card (assign button, send); assign to folder/task, stop, clear |
-| Tasks | `/tasks` (tab) | Queue grouped as Active, Waiting, Backlog, Done. Cards read like "(Codex) Implement X · in project". New-task sheet and details sheet |
+| Tasks | `/tasks` (tab) | Queue grouped as Active, Waiting, Backlog, Done (kanban columns on wide screens). Cards read like "(Codex) Implement X · in project". Task details sheet |
+| New Task | `/new-task?project=<id>` (full screen) | Assistant-style page: greeting, project and agent choice pills (no agent means backlog), template chips and a suggest chip, and a composer card whose text becomes the task title. Opened from the Tasks FAB and the dashboard "+" |
 | Settings | `/settings` (tab) | PC URL and connection test, simulation toggle, theme, notification toggles (not wired up yet) |
 
 **Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test and log visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.
@@ -38,9 +39,9 @@ lib/
   data/backend/             agent_backend.dart (abstract contract) · mock_backend.dart · mock_seed.dart
   providers/                backend_providers.dart (streams + derived views) · settings_provider.dart
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
-                            page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame) · glow.dart (FloatingGlow, BottomHaze)
+                            page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame, PromptGreeting, SuggestionPill, submitOnEnter) · glow.dart (FloatingGlow, BottomHaze)
   widgets/status/           status system (see above)
-  widgets/sheets/           assign_agent, new_task, run_command bottom sheets
+  widgets/sheets/           assign_agent, run_command bottom sheets
   features/<area>/          one folder per screen area
   utils/time_format.dart    timeAgo, formatDuration, clockTime
 ```

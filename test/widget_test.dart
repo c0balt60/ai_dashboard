@@ -7,6 +7,8 @@ import 'package:ai_dashboard/features/dashboard/dashboard_screen.dart';
 import 'package:ai_dashboard/features/projects/project_dashboard_screen.dart';
 import 'package:ai_dashboard/features/projects/projects_screen.dart';
 import 'package:ai_dashboard/features/settings/settings_screen.dart';
+import 'package:ai_dashboard/data/models/models.dart';
+import 'package:ai_dashboard/features/tasks/new_task_screen.dart';
 import 'package:ai_dashboard/features/tasks/tasks_screen.dart';
 import 'package:ai_dashboard/providers/backend_providers.dart';
 import 'package:ai_dashboard/widgets/page.dart';
@@ -71,6 +73,10 @@ Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   router.push(AppRoutes.project('p2'));
   await tester.pump(const Duration(milliseconds: 500));
   expect(find.byType(ProjectDashboardScreen), findsOneWidget);
+
+  router.push(AppRoutes.newTask());
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.byType(NewTaskScreen), findsOneWidget);
 }
 
 /// MaterialApp animates theme changes: one frame starts the animation, the
@@ -121,6 +127,35 @@ void main() {
     await container.read(backendProvider).clearMessages(agentId);
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('Good to see you again'), findsOneWidget);
+  });
+
+  testWidgets('new task page creates a queued task for the chosen agent', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    await tester.tap(find.byTooltip('New task'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(NewTaskScreen), findsOneWidget);
+
+    final codex = find.textContaining('Codex ·');
+    await tester.ensureVisible(codex);
+    await tester.pump();
+    await tester.tap(codex);
+    await tester.enterText(find.byType(TextField), 'Add rate limiting');
+    await tester.pump();
+    await tester.tap(find.text('Create'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(NewTaskScreen), findsNothing);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(App)),
+    );
+    final task = container
+        .read(tasksProvider)
+        .value!
+        .singleWhere((t) => t.title == 'Add rate limiting');
+    expect(task.state, TaskState.waiting);
+    expect(container.read(agentProvider(task.agentId!))!.name, 'Codex');
   });
 
   testWidgets('header button toggles between light and dark theme', (
