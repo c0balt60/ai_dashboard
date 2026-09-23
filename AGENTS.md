@@ -24,7 +24,7 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 | Agents | `/agents` (tab) | Status filter chips and agent cards |
 | Agent Screen (chat) | `/agent/:id` (full screen) | Centered agent title (tap to switch agent) with status pill, collapsible "Currently working on" banner, greeting with suggestion pills while empty, chat bubbles, typing indicator, quick-prompt chips, composer card (assign button, send); assign to folder/task, stop, clear |
 | Tasks | `/tasks` (tab) | Queue grouped as Active, Waiting, Backlog, Done (kanban columns on wide screens). Cards read like "(Codex) Implement X · in project". Task details sheet |
-| New Task | `/new-task?project=<id>` (full screen) | Assistant-style page: greeting, project and agent choice pills (no agent means backlog), template chips and a suggest chip, and a composer card whose text becomes the task title. Opened from the Tasks FAB and the dashboard "+" |
+| New Task | `/new-task?project=<id>` (full screen) | Assistant-style page: greeting, template chips and a suggest chip, and a composer card whose text becomes the task title, with project and agent dropdown buttons (`MenuAnchor`) inside it (no agent means backlog). Opened from the Tasks FAB and the dashboard "+" |
 | Settings | `/settings` (tab) | PC URL and connection test, simulation toggle, theme, notification toggles (not wired up yet) |
 
 **Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test and log visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.

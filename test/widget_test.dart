@@ -137,13 +137,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.byType(NewTaskScreen), findsOneWidget);
 
-    final codex = find.textContaining('Codex ·');
-    await tester.ensureVisible(codex);
-    await tester.pump();
-    await tester.tap(codex);
+    await tester.tap(find.byTooltip('Choose agent'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Codex'));
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.enterText(find.byType(TextField), 'Add rate limiting');
     await tester.pump();
-    await tester.tap(find.text('Create'));
+    await tester.tap(find.byTooltip('Create task'));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(NewTaskScreen), findsNothing);
