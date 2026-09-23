@@ -26,8 +26,13 @@ abstract final class AppRoutes {
 
   static String project(String id) => '/project/$id';
   static String agent(String id) => '/agent/$id';
-  static String newTask({String? projectId}) =>
-      projectId == null ? '/new-task' : '/new-task?project=$projectId';
+  static String newTask({String? projectId, String? title, String? agentId}) {
+    final query = {'project': ?projectId, 'title': ?title, 'agent': ?agentId};
+    return Uri(
+      path: '/new-task',
+      queryParameters: query.isEmpty ? null : query,
+    ).toString();
+  }
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -51,8 +56,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/new-task',
-        builder: (context, state) =>
-            NewTaskScreen(projectId: state.uri.queryParameters['project']),
+        builder: (context, state) => NewTaskScreen(
+          projectId: state.uri.queryParameters['project'],
+          title: state.uri.queryParameters['title'],
+          agentId: state.uri.queryParameters['agent'],
+        ),
       ),
       GoRoute(
         path: '/agent/:id',

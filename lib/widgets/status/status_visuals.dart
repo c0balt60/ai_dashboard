@@ -1,11 +1,12 @@
-/// Single source of truth for how each agent status, task state and test
-/// status looks (label, icon, color).
+/// Single source of truth for how each agent status, task state, test status
+/// and to-do due date looks (label, icon, color).
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
 import '../../data/models/models.dart';
+import '../../utils/time_format.dart';
 
 class StatusVisual {
   const StatusVisual(
@@ -107,6 +108,21 @@ extension LogLevelVisual on LogLevel {
         c.waiting,
       ),
       LogLevel.error => StatusVisual('Error', Icons.error, c.failed),
+    };
+  }
+}
+
+extension TodoItemDueVisual on TodoItem {
+  /// Overdue items read as failed and items due within a day as waiting.
+  /// Null when the item is done or has no due date.
+  StatusVisual? dueVisual(BuildContext context) {
+    final due = dueDate;
+    if (due == null || done) return null;
+    final c = StatusColors.of(context);
+    return switch (daysUntil(due)) {
+      < 0 => StatusVisual(dueLabel(due), Icons.event_busy, c.failed),
+      <= 1 => StatusVisual(dueLabel(due), Icons.event, c.waiting),
+      _ => StatusVisual(dueLabel(due), Icons.event_outlined, c.idle),
     };
   }
 }
