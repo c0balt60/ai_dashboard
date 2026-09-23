@@ -1,0 +1,108 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../app/router.dart';
+import '../data/models/models.dart';
+import '../providers/backend_providers.dart';
+import '../utils/time_format.dart';
+import 'common.dart';
+import 'status/agent_avatar.dart';
+import 'status/status_badge.dart';
+import 'status/status_visuals.dart';
+
+/// List card for an agent: avatar, status, project/folder and current
+/// activity. Tapping opens the agent chat unless [onTap] is given.
+class AgentCard extends ConsumerWidget {
+  const AgentCard(this.agent, {super.key, this.onTap, this.compact = false});
+
+  final Agent agent;
+  final VoidCallback? onTap;
+
+  /// Fixed-width variant for horizontal carousels.
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final project = agent.projectId == null
+        ? null
+        : ref.watch(projectProvider(agent.projectId!));
+
+    final header = Row(
+      children: [
+        AgentAvatar(agent, radius: compact ? 18 : 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                agent.name,
+                style: theme.textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                agent.type.label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        StatusBadge(agent.status.visual(context), dense: compact),
+      ],
+    );
+
+    return SizedBox(
+      width: compact ? 260 : null,
+      child: Card(
+        child: InkWell(
+          onTap: onTap ?? () => context.push(AppRoutes.agent(agent.id)),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                header,
+                const SizedBox(height: 10),
+                Text(
+                  agent.activity,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    if (project != null)
+                      Flexible(
+                        child: InfoChip(project.name, icon: Icons.folder_open),
+                      )
+                    else
+                      const InfoChip('Unassigned', icon: Icons.folder_off),
+                    if (agent.branch != null && !compact) ...[
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: InfoChip(agent.branch!, icon: Icons.call_split),
+                      ),
+                    ],
+                    const Spacer(),
+                    Text(
+                      timeAgo(agent.lastActive),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
