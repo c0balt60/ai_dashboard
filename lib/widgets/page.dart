@@ -1,6 +1,7 @@
 /// The frame shared by the tab screens: a large title header with round
 /// action buttons and the theme toggle, content centered on wide screens,
-/// optional pull-to-refresh, and an optional floating bottom bar.
+/// optional pull-to-refresh, and an optional floating bottom bar or FAB that
+/// glows over a haze fading the content out beneath it.
 library;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/theme.dart';
 import '../providers/settings_provider.dart';
+import 'glow.dart';
 import 'layout.dart';
 
 class AppPage extends StatelessWidget {
@@ -42,7 +44,9 @@ class AppPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: floatingActionButton,
+      floatingActionButton: floatingActionButton == null
+          ? null
+          : FloatingGlow(child: floatingActionButton!),
       body: SafeArea(
         bottom: false,
         child: LayoutBuilder(
@@ -72,16 +76,23 @@ class AppPage extends StatelessWidget {
             if (onRefresh != null) {
               body = RefreshIndicator(onRefresh: onRefresh!, child: body);
             }
-            if (bottomBar == null) return body;
+            if (bottomBar == null && floatingActionButton == null) return body;
             return Stack(
               children: [
                 Positioned.fill(child: body),
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 12,
-                  child: ContentWidth(maxWidth: 720, child: bottomBar!),
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: BottomHaze(),
                 ),
+                if (bottomBar != null)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 12,
+                    child: ContentWidth(maxWidth: 720, child: bottomBar!),
+                  ),
               ],
             );
           },

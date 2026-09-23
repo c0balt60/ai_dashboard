@@ -252,8 +252,11 @@ ThemeData buildTheme(Brightness brightness) {
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: scheme.primary,
       foregroundColor: scheme.onPrimary,
-      elevation: 2,
-      highlightElevation: 4,
+      // FloatingGlow supplies the depth instead of a gray elevation shadow.
+      elevation: 0,
+      focusElevation: 0,
+      hoverElevation: 0,
+      highlightElevation: 0,
       shape: const StadiumBorder(),
       extendedTextStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
     ),

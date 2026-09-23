@@ -38,7 +38,7 @@ lib/
   data/backend/             agent_backend.dart (abstract contract) · mock_backend.dart · mock_seed.dart
   providers/                backend_providers.dart (streams + derived views) · settings_provider.dart
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
-                            page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame)
+                            page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame) · glow.dart (FloatingGlow, BottomHaze)
   widgets/status/           status system (see above)
   widgets/sheets/           assign_agent, new_task, run_command, quick_prompt bottom sheets
   features/<area>/          one folder per screen area
@@ -75,6 +75,7 @@ lib/
 - Tab screens are built with `AppPage` (large title header, round `HeaderAction`s, theme toggle, centering gutter, pull-to-refresh). Don't give them their own Scaffold/AppBar or background; the shell paints `AppBackdrop`.
 - Detail screens use `AppBackdrop(child: Scaffold(backgroundColor: Colors.transparent, ...))`.
 - Cards are borderless on the backdrop (radius 24, `AppSurfaces.card`). Pastel tiles use `AppSurfaces.tint(accent, brightness)`.
+- Anything floating over content (prompt bars, FABs) gets `FloatingGlow` rather than a Material elevation shadow. `AppPage` does this for its FAB and `bottomBar`, and adds a `BottomHaze` behind them.
 - From 840dp the shell shows a side rail and content centers at max 1100dp. Card lists go in `ResponsiveGrid`. Keep scroll views full width and center with padding, so the mouse wheel works anywhere. Never wrap a `LayoutBuilder` in `IntrinsicHeight`.
 - Single-column layouts, 16px side padding, touch targets of at least 48dp, and `SafeArea` everywhere.
 - Actions open modal bottom sheets. Sheets that can open from a tab use `useRootNavigator: true` and `isScrollControlled`, and add bottom padding from `MediaQuery.viewInsets` so the keyboard never covers inputs.

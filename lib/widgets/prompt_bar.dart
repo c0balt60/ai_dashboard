@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
+import 'glow.dart';
 
 /// Gradient ring used as the mark for prompting agents.
 class AiOrb extends StatelessWidget {
@@ -45,8 +46,8 @@ class AiOrb extends StatelessWidget {
   }
 }
 
-/// Raised, rounded card surface for prompt inputs. Tappable when [onTap] is
-/// given.
+/// Rounded card surface for prompt inputs that floats on a soft glow.
+/// Tappable when [onTap] is given.
 class PromptBarFrame extends StatelessWidget {
   const PromptBarFrame({
     super.key,
@@ -61,22 +62,22 @@ class PromptBarFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     const shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(28)),
     );
-    return Material(
-      color: AppSurfaces.of(context).card,
+    return FloatingGlow(
       shape: shape,
-      elevation: 6,
-      shadowColor: scheme.shadow.withValues(alpha: 0.35),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: shape,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 56),
-          child: Padding(padding: padding, child: child),
+      child: Material(
+        color: AppSurfaces.of(context).card,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: shape,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: Padding(padding: padding, child: child),
+          ),
         ),
       ),
     );

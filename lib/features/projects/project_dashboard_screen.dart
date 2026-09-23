@@ -9,6 +9,7 @@ import '../../providers/backend_providers.dart';
 import '../../utils/time_format.dart';
 import '../../widgets/agent_card.dart';
 import '../../widgets/common.dart';
+import '../../widgets/glow.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
@@ -68,10 +69,12 @@ class ProjectDashboardScreen extends ConsumerWidget {
               const SizedBox(width: 8),
             ],
           ),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => showRunCommandSheet(context, projectId),
-            icon: const Icon(Icons.terminal),
-            label: const Text('Run command'),
+          floatingActionButton: FloatingGlow(
+            child: FloatingActionButton.extended(
+              onPressed: () => showRunCommandSheet(context, projectId),
+              icon: const Icon(Icons.terminal),
+              label: const Text('Run command'),
+            ),
           ),
           body: SafeArea(
             top: false,
