@@ -8,8 +8,8 @@ You build mobile-first Flutter screens for this repo. Read `AGENTS.md` first and
 
 ## Before writing code
 Read the contracts you depend on:
-- `lib/data/models/`
-- `lib/data/backend/agent_backend.dart` (and skim `mock_backend.dart` for behaviour)
+- `packages/agent_core/lib/src/models/` (the app imports them via `lib/data/models/models.dart`)
+- `packages/agent_core/lib/src/backend/agent_backend.dart` (and skim `mock_backend.dart` for behaviour). Actions can throw `BackendException` when connected to the PC.
 - `lib/providers/`
 - `lib/widgets/` (the status widgets, cards and `common.dart`)
 - `lib/app/router.dart` (`AppRoutes`)

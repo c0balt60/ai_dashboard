@@ -12,7 +12,7 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 - watch agent status, git branches, test results and task progress
 - have several agents work on a project at the same time
 
-**Current state:** every screen is built, and the data comes from an **in-app mock backend** (`MockAgentBackend`). There is no real PC server yet.
+**Current state:** every screen is built. The app shows either built-in demo data (`MockAgentBackend`) or the real PC through the **server in `server/`**, which drives the agent CLIs (`LocalAgentBackend`) and also serves the web build. Settings > Server switches between them. The phone reaches the PC over Tailscale (`tailscale serve` in front of the server, which listens on localhost only).
 
 ## Features and screens
 
@@ -26,18 +26,20 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 | Tasks | `/tasks` (tab) | Two views picked by chips under the header. **Agent queue:** grouped as Active, Waiting, Backlog, Done (kanban columns on wide screens); cards read like "(Codex) Implement X · in project"; task details sheet. **My lists:** the user's own to-do lists (`TodoList`/`TodoItem`) with progress, timeline and overdue count. The FAB follows the view (New task / New list) |
 | New Task | `/new-task?project=&title=&agent=` (full screen, all optional) | Assistant-style page: greeting, template chips and a suggest chip, and a composer card whose text becomes the task title, with project and agent dropdown buttons (`MenuAnchor`) inside it (no agent means backlog). Opened from the Tasks FAB, the dashboard "+" and a to-do's "send to agent", which prefills it |
 | To-do list | `/list/:id` (full screen) | Open items soonest due first, collapsible Done. Items are tagged with projects and agents, have an optional start and due date, and can be handed off as a prefilled agent task. Rename, clear done, delete |
-| Settings | `/settings` (tab) | PC URL and connection test, simulation toggle, theme, notification toggles (not wired up yet) |
+| Settings | `/settings` (tab) | Demo data / My PC switch, PC URL and access token, live connection status and test, simulation toggle (demo only), theme, notification toggles (not wired up yet). Everything is saved with shared_preferences |
 
-**Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test, log and to-do due-date visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.
+**Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test, log, to-do due-date and PC-connection visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.
 
 ## Architecture
 
 ```
+packages/agent_core/        pure Dart, shared by app and server: models (with toJson/fromJson), the AgentBackend contract, MockAgentBackend + seed, protocol.dart (ApiPaths, Topics, WebSocket frames)
+server/                     the PC server (shelf): bin/server.dart · lib/api.dart (REST + WebSocket + static web app) · local_backend.dart (real agents, state.json persistence) · runners/ (Claude Code, Codex, Gemini CLI, Aider) · process_utils.dart (runShell, git branch) · config.dart · tool/install_task.ps1 (autostart at log on)
 lib/
-  main.dart                 ProviderScope(child: App())
+  main.dart                 loads SharedPreferences, shows stray BackendExceptions as snackbars, ProviderScope(child: App())
   app/                      app.dart (MaterialApp.router) · app_version.dart (version shown in About) · router.dart (go_router + AppRoutes) · shell_scaffold.dart (bottom NavigationBar, side rail from 840dp) · theme.dart (M3 light/dark + StatusColors and AppSurfaces ThemeExtensions)
-  data/models/              immutable models with handwritten copyWith; models.dart re-exports them all
-  data/backend/             agent_backend.dart (abstract contract) · mock_backend.dart · mock_seed.dart
+  data/models/models.dart   re-exports package:agent_core/models.dart
+  data/backend/             http_backend.dart (HttpAgentBackend, ConnectionStatus, BackendException) · socket_connect*.dart (WebSocket with native pings)
   providers/                backend_providers.dart (streams + derived views) · settings_provider.dart
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
                             page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame, PromptGreeting, SuggestionPill, submitOnEnter) · glow.dart (FloatingGlow, BottomHaze)
@@ -52,9 +54,11 @@ tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart toge
 - The UI never touches a backend class directly.
   - It watches providers in `backend_providers.dart` (`agentsProvider`, `projectsProvider`, `tasksProvider`, `messagesProvider(id)`, plus derived ones like `agentProvider(id)`, `tasksByStateProvider` and `dashboardStatsProvider`).
   - It triggers actions with `ref.read(backendProvider).someAction(...)`.
-- **`AgentBackend`** (`lib/data/backend/agent_backend.dart`) is the only contract with the PC. Each `watch*` stream emits a full snapshot straight away and again on every change.
+- **`AgentBackend`** (`packages/agent_core/lib/src/backend/agent_backend.dart`) is the only contract with the PC. Each `watch*` stream emits a full snapshot straight away and again on every change.
+- **`backendProvider`** builds a `MockAgentBackend` or an `HttpAgentBackend` from the settings (mode, URL, token); changing them swaps the backend. `connectionStatusProvider` exposes the live link (null in demo mode).
 - **`MockAgentBackend`** keeps state in memory. A `Timer.periodic` tick (every 3s) moves tasks forward, completes or fails them, promotes waiting tasks and adds test runs. Prompts get canned replies after `latency`. `simulate: false, latency: Duration.zero` makes it deterministic for tests.
-- **Future real backend:** add an `HttpAgentBackend implements AgentBackend` (REST plus WebSocket to a small server on the PC that wraps the agent CLIs), then swap it in `backendProvider`. No UI changes should be needed.
+- **Wire protocol** (`protocol.dart`): actions are JSON requests under `/api` with `Authorization: Bearer <token>`; streams are topics on one WebSocket at `/api/ws` (token in the `token` query parameter), answered with full snapshots. `HttpAgentBackend` reconnects with backoff and re-subscribes.
+- **`LocalAgentBackend`** (server): agents and projects come from `server/config.json`. One turn per agent at a time, each a CLI process in the agent's folder with the prompt on stdin; the CLI session id is kept so the next turn resumes the conversation. Tasks queued for an agent start when it is free, and a finished task runs the project's `testCommand`. `runCommand` goes through PowerShell `-EncodedCommand` on Windows. State persists to `state.json` in the data dir.
 
 ### Navigation
 - The five tabs sit in a `StatefulShellRoute.indexedStack`, so each tab keeps its own back stack.
@@ -93,7 +97,7 @@ tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart toge
 - **Commits:** split work into several logical commits (dependencies, then data layer, then shared widgets, then each feature, then tests). Never dump everything into one commit, and don't commit straight to `main`; use a feature branch.
 - **Versioning:** every change set bumps the version, which shows in Settings > About. Pick `major`, `minor`, `patch` or `build` as described in `VERSIONING.md`, run `tool/bump_version.dart`, and commit the bump on its own as the last commit (`Bump version to X.Y.Z`). Never edit the version by hand.
 - Match the surrounding code style. Run `dart format` before committing.
-- **Secrets:** never commit API keys or tokens. When a real backend arrives, keep secrets in a gitignored `.env` file, `--dart-define`, or platform secure storage.
+- **Secrets:** never commit API keys or tokens. The server token lives in the gitignored `server/config.json` (or `AI_DASHBOARD_TOKEN`); the app stores it from Settings. The Android keystore and `android/key.properties` are gitignored too.
 
 ## Commands
 
@@ -106,20 +110,28 @@ C:\Users\elmtc\flutter\bin\flutter.bat test
 C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe tool/bump_version.dart patch   # or major | minor | build, see VERSIONING.md
 C:\Users\elmtc\flutter\bin\flutter.bat run -d edge      # web testing (Chrome isn't installed; Edge is)
 C:\Users\elmtc\flutter\bin\flutter.bat run -d web-server --web-hostname 0.0.0.0 --web-port 8080   # open from a phone on the LAN
+C:\Users\elmtc\flutter\bin\flutter.bat build web --release   # the server serves build/web
+
+# From server/ (needs config.json, see config.example.json):
+C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe run bin/server.dart --simulate   # mock agents
+C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe run bin/server.dart              # real agents
+C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe test
 ```
+
+Only build an APK when asked: `flutter.bat build apk --release --split-per-abi` (signed when `android/key.properties` exists).
 
 ## Testing
 
 - `test/widget_test.dart` is the smoke test. It overrides `backendProvider` with `MockAgentBackend(simulate: false, latency: Duration.zero)`, visits every tab and pushes the agent-chat and project routes, once on a phone view (1080×2340 at 3x) and once on a desktop view (1440×900 at 1x, via the side rail). It also checks the header theme toggle.
-- `test/mock_backend_test.dart` holds unit tests for mock behaviour.
+- `test/http_backend_test.dart` runs `HttpAgentBackend` against the real server handler in-process (streams, actions, wrong token, reconnect). `test/settings_test.dart` checks settings persistence.
+- `packages/agent_core/test/` covers the mock and the JSON/protocol round trips. `server/test/` covers the API, the runners (fixtures plus a fake CLI) and `LocalAgentBackend` (with a fake runner).
 - `test/version_test.dart` checks that `lib/app/app_version.dart` matches the `pubspec.yaml` version.
 - Status dots animate forever, so **never use `pumpAndSettle`**. Use `pump(const Duration(...))` instead.
 - Keep the suite small and meaningful, and run it once per change rather than repeatedly.
 
 ## Known gaps / next steps
 
-- There is no real PC backend or server yet, and no authentication.
-- Settings are in memory only and not persisted.
+- Only the Claude Code runner follows a checked output format. The Codex, Gemini CLI and Aider runners follow their documented flags and should be verified against the installed versions.
+- Most screens fire backend actions without catching errors. `main.dart` shows failed requests as a snackbar, but sheets don't reset their busy state on failure.
 - The notification toggles are UI only; push notifications don't exist yet.
-- The theme choice isn't persisted; it resets on restart, like the other settings.
-- Web uses path URLs, so a static host needs to rewrite unknown paths to `index.html` (the Flutter dev server already does).
+- Web uses path URLs. The server falls back to `index.html`, but any other static host would need the same rewrite.

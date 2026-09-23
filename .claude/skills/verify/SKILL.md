@@ -8,11 +8,13 @@ description: Format, analyze and test this Flutter project using the full SDK pa
 Run the steps below from the project root. Stop at the first step that fails, fix the problem, and re-run only that step.
 
 1. Format:
-   `C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe format lib test`
-2. Analyze. It must print `No issues found!`:
+   `C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe format lib test packages server`
+2. Analyze. It must print `No issues found!` (this also covers `packages/` and `server/`):
    `C:\Users\elmtc\flutter\bin\flutter.bat analyze`
-3. Test:
+3. Test the app:
    `C:\Users\elmtc\flutter\bin\flutter.bat test`
+4. Only if `packages/agent_core` or `server` changed, test them too, from their folders:
+   `C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe test`
 
 ## Reading failures
 

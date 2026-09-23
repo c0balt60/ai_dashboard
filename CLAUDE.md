@@ -7,7 +7,7 @@
 - **Skills** (`.claude/skills/`):
   - `verify`: format, analyze and test with the full Flutter paths.
   - `add-screen`: add a tab or detail screen with routing and a smoke-test entry.
-  - `add-backend-operation`: add a backend action end to end (contract, mock, provider, UI).
+  - `add-backend-operation`: add a backend action end to end (contract, protocol, mock, PC server, HTTP client, provider, UI).
 - **Subagents** (`.claude/agents/`):
   - `flutter-screen-builder`: builds one screen area with strict file ownership, which makes it safe to run in parallel.
   - `mobile-ui-reviewer`: a read-only review of mobile UX and layout issues.
