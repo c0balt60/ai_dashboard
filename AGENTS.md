@@ -42,7 +42,7 @@ lib/
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
                             page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame, PromptGreeting, SuggestionPill, submitOnEnter) · glow.dart (FloatingGlow, BottomHaze)
   widgets/status/           status system (see above)
-  widgets/sheets/           assign_agent, run_command, todo_list, todo_item bottom sheets
+  widgets/sheets/           app_sheet (showAppSheet, SheetHeader) · assign_agent, run_command, todo_list, todo_item bottom sheets
   features/<area>/          one folder per screen area
   utils/time_format.dart    timeAgo, formatDuration, clockTime
 ```
@@ -80,7 +80,7 @@ lib/
 - Anything floating over content (prompt bars, FABs) gets `FloatingGlow` rather than a Material elevation shadow. `AppPage` does this for its FAB and `bottomBar`, and adds a `BottomHaze` behind them.
 - From 840dp the shell shows a side rail and content centers at max 1100dp. Card lists go in `ResponsiveGrid`. Keep scroll views full width and center with padding, so the mouse wheel works anywhere. Never wrap a `LayoutBuilder` in `IntrinsicHeight`.
 - Single-column layouts, 16px side padding, touch targets of at least 48dp, and `SafeArea` everywhere.
-- Actions open modal bottom sheets. Sheets that can open from a tab use `useRootNavigator: true` and `isScrollControlled`, and add bottom padding from `MediaQuery.viewInsets` so the keyboard never covers inputs.
+- Actions open modal bottom sheets. Open them with `showAppSheet` and start them with a `SheetHeader`: phones get a drag handle, desktop windows (`Breakpoints.isDesktop`) get a close button instead. Sheets add bottom padding from `MediaQuery.viewInsets` so the keyboard never covers inputs.
 - Primary actions go in FABs, filters in horizontally scrolling chips, and refreshes use pull-to-refresh.
 - Colors come from the theme `ColorScheme` or `StatusColors.of(context)`. Never hardcode colors, except in the monospace terminal output box.
 - Text in a `Row` must be able to shrink: use `Expanded`/`Flexible` with `TextOverflow.ellipsis`. The smoke test runs at 360dp wide and fails on overflows.
