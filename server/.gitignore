@@ -2,3 +2,4 @@
 config.json
 .dart_tool/
 *.exe
+server.log
