@@ -1,10 +1,11 @@
-/// Single source of truth for how each agent status, task state, test status
-/// and to-do due date looks (label, icon, color).
+/// Single source of truth for how each agent status, task state, test status,
+/// to-do due date and PC connection state looks (label, icon, color).
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
+import '../../data/backend/http_backend.dart';
 import '../../data/models/models.dart';
 import '../../utils/time_format.dart';
 
@@ -46,6 +47,30 @@ extension AgentStatusVisual on AgentStatus {
       ),
       AgentStatus.failed => StatusVisual('Failed', Icons.error, c.failed),
       AgentStatus.idle => StatusVisual('Idle', Icons.pause_circle, c.idle),
+    };
+  }
+}
+
+extension ConnectionStatusVisual on ConnectionStatus {
+  StatusVisual visual(BuildContext context) {
+    final c = StatusColors.of(context);
+    return switch (this) {
+      ConnectionStatus.connected => StatusVisual(
+        'Connected',
+        Icons.link,
+        c.completed,
+      ),
+      ConnectionStatus.connecting => StatusVisual(
+        'Connecting…',
+        Icons.sync,
+        c.waiting,
+        animated: true,
+      ),
+      ConnectionStatus.offline => StatusVisual(
+        'Offline',
+        Icons.link_off,
+        c.failed,
+      ),
     };
   }
 }

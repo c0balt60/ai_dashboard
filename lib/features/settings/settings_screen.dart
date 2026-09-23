@@ -7,6 +7,8 @@ import '../../providers/settings_provider.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
+import '../../widgets/status/status_dot.dart';
+import '../../widgets/status/status_visuals.dart';
 
 /// Settings tab: PC connection, simulation, appearance and notifications,
 /// each grouped in its own rounded card. Wide screens split the cards into
@@ -24,28 +26,69 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final _urlController = TextEditingController(
     text: ref.read(settingsProvider).serverUrl,
   );
+  late final _tokenController = TextEditingController(
+    text: ref.read(settingsProvider).authToken,
+  );
   bool _testing = false;
+  bool _showToken = false;
+  String? _urlError;
 
   @override
   void dispose() {
     _urlController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
-  void _saveUrl(String value) {
-    ref.read(settingsProvider.notifier).setServerUrl(value.trim());
+  void _snack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('PC URL saved')));
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Saves the URL and token fields. Returns false, flagging the URL field,
+  /// when the URL isn't usable.
+  bool _saveServer() {
+    final notifier = ref.read(settingsProvider.notifier);
+    try {
+      notifier.setServerUrl(_urlController.text);
+    } on FormatException catch (e) {
+      setState(() => _urlError = e.message);
+      return false;
+    }
+    notifier.setAuthToken(_tokenController.text);
+    setState(() => _urlError = null);
+    return true;
+  }
+
+  void _setMode(ConnectionMode mode) {
+    if (mode == ConnectionMode.server && !_saveServer()) return;
+    ref.read(settingsProvider.notifier).setConnectionMode(mode);
+  }
+
+  void _saveAndConnect() {
+    if (!_saveServer()) return;
+    FocusScope.of(context).unfocus();
+    _snack(switch (ref.read(settingsProvider).connectionMode) {
+      ConnectionMode.server => 'Saved. Connecting to your PC…',
+      ConnectionMode.mock => 'Saved. Choose My PC to connect.',
+    });
+  }
+
+  /// In PC mode, saves the fields first so the test uses what was typed.
   Future<void> _testConnection() async {
     final messenger = ScaffoldMessenger.of(context);
+    final mode = ref.read(settingsProvider).connectionMode;
+    if (mode == ConnectionMode.server && !_saveServer()) return;
+    final target = switch (mode) {
+      ConnectionMode.mock => 'the demo backend',
+      ConnectionMode.server => 'your PC',
+    };
     setState(() => _testing = true);
     String message;
     try {
       final rtt = await ref.read(backendProvider).ping();
-      message = 'Connected to the mock backend · ${rtt.inMilliseconds} ms';
+      message = 'Connected to $target · ${rtt.inMilliseconds} ms';
     } catch (e) {
       message = 'Connection failed: $e';
     }
@@ -66,6 +109,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       color: scheme.onSurfaceVariant,
     );
 
+    final isServer = settings.connectionMode == ConnectionMode.server;
+    final link = ref.watch(connectionStatusProvider).value?.visual(context);
+    final testButton = FilledButton.tonalIcon(
+      onPressed: _testing ? null : _testConnection,
+      icon: _testing
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.network_ping),
+      label: const Text('Test connection'),
+    );
+
     final server = _SettingsSection(
       title: 'Server',
       child: Padding(
@@ -73,32 +129,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            SegmentedButton<ConnectionMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: ConnectionMode.mock,
+                  icon: Icon(Icons.science_outlined),
+                  label: Text('Demo data'),
+                ),
+                ButtonSegment(
+                  value: ConnectionMode.server,
+                  icon: Icon(Icons.computer),
+                  label: Text('My PC'),
+                ),
+              ],
+              selected: {settings.connectionMode},
+              onSelectionChanged: (modes) => _setMode(modes.first),
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: _urlController,
               keyboardType: TextInputType.url,
               autocorrect: false,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
                 labelText: 'PC URL',
-                hintText: 'http://192.168.1.10:8787',
-                prefixIcon: Icon(Icons.computer),
+                hintText: 'https://my-pc.tailnet.ts.net',
+                prefixIcon: const Icon(Icons.dns_outlined),
+                errorText: _urlError,
               ),
-              onSubmitted: _saveUrl,
             ),
             const SizedBox(height: 12),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FilledButton.tonalIcon(
-                onPressed: _testing ? null : _testConnection,
-                icon: _testing
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.network_ping),
-                label: const Text('Test connection'),
+            TextField(
+              controller: _tokenController,
+              obscureText: !_showToken,
+              autocorrect: false,
+              enableSuggestions: false,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: 'Access token',
+                prefixIcon: const Icon(Icons.key),
+                suffixIcon: IconButton(
+                  tooltip: _showToken ? 'Hide token' : 'Show token',
+                  icon: Icon(
+                    _showToken ? Icons.visibility_off : Icons.visibility,
+                  ),
+                  onPressed: () => setState(() => _showToken = !_showToken),
+                ),
               ),
+              onSubmitted: (_) => _saveAndConnect(),
             ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilledButton.icon(
+                  onPressed: _saveAndConnect,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save'),
+                ),
+                testButton,
+              ],
+            ),
+            if (isServer && link != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  StatusDot(link),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      link.label,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: link.color,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -117,8 +230,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Only the built-in mock backend is available for now. '
-                      'The URL is saved but not used to connect yet.',
+                      isServer
+                          ? 'Run the server on your PC and reach it through '
+                                'Tailscale. The token is the one in the '
+                                "server's config.json."
+                          : 'Showing built-in demo data. Choose My PC to '
+                                'connect to the agents on your computer.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSecondaryContainer,
                       ),
@@ -253,7 +370,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       server,
-                      simulation,
+                      if (!isServer) simulation,
                       appearance,
                       notifications,
                       about,
@@ -275,7 +392,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [simulation, notifications, about],
+                        children: [
+                          if (!isServer) simulation,
+                          notifications,
+                          about,
+                        ],
                       ),
                     ),
                   ],

@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../data/backend/http_backend.dart';
 import '../../data/models/models.dart';
 import '../../providers/backend_providers.dart';
+import '../../providers/settings_provider.dart';
 import '../../utils/time_format.dart';
 import '../../widgets/agent_card.dart';
 import '../../widgets/common.dart';
@@ -90,8 +92,15 @@ class _ConnectionPill extends ConsumerWidget {
     final theme = Theme.of(context);
     final colors = StatusColors.of(context);
     final ping = ref.watch(_pingProvider);
+    final isServer =
+        ref.watch(settingsProvider.select((s) => s.connectionMode)) ==
+        ConnectionMode.server;
+    final link = isServer
+        ? ref.watch(connectionStatusProvider).value ??
+              ConnectionStatus.connecting
+        : null;
 
-    final (pingLabel, color) = switch (ping) {
+    final (pingLabel, pingColor) = switch (ping) {
       AsyncValue(hasError: true) => ('Ping failed', colors.failed),
       AsyncValue(value: final latency?) => (
         '${latency.inMilliseconds} ms',
@@ -99,6 +108,11 @@ class _ConnectionPill extends ConsumerWidget {
       ),
       _ => ('Pinging…', colors.idle),
     };
+    final linkVisual = link?.visual(context);
+    final title = 'Main PC · ${linkVisual?.label ?? 'Demo data'}';
+    final color = link == null || link == ConnectionStatus.connected
+        ? pingColor
+        : linkVisual!.color;
     const shape = StadiumBorder();
 
     return Align(
@@ -107,7 +121,7 @@ class _ConnectionPill extends ConsumerWidget {
         constraints: const BoxConstraints(maxWidth: 520),
         child: Semantics(
           button: true,
-          label: 'Main PC, connected (mock). $pingLabel. Tap to ping again.',
+          label: '$title. $pingLabel. Tap to ping again.',
           excludeSemantics: true,
           onTap: () => ref.invalidate(_pingProvider),
           child: Material(
@@ -129,7 +143,7 @@ class _ConnectionPill extends ConsumerWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Main PC · Connected (mock)',
+                          title,
                           style: theme.textTheme.titleSmall,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
