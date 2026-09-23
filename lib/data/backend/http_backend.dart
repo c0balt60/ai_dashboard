@@ -82,7 +82,7 @@ class HttpAgentBackend implements AgentBackend {
       channel = _connectSocket(_socketUri);
       await channel.ready.timeout(requestTimeout);
     } catch (_) {
-      _scheduleReconnect();
+      _scheduleReconnect(await _diagnose());
       return;
     }
     if (_disposed) {
@@ -106,14 +106,30 @@ class HttpAgentBackend implements AgentBackend {
   void _onClosed(WebSocketChannel channel) {
     if (!identical(_channel, channel)) return;
     _channel = null;
-    _scheduleReconnect();
+    _scheduleReconnect(BackendException('Lost the connection to the PC'));
   }
 
-  void _scheduleReconnect() {
+  /// Browsers don't expose why a WebSocket failed, so ask over HTTP to tell
+  /// a wrong token apart from an unreachable PC.
+  Future<BackendException> _diagnose() async {
+    try {
+      await _request('GET', ApiPaths.ping);
+      return BackendException("Can't open the live connection to the PC");
+    } on BackendException catch (e) {
+      return e.statusCode == 401
+          ? BackendException(
+              'Wrong or missing access token. Set it in Settings.',
+              statusCode: 401,
+            )
+          : e;
+    }
+  }
+
+  void _scheduleReconnect(BackendException reason) {
     if (_disposed) return;
     _setStatus(ConnectionStatus.offline);
     for (final t in _topics.values) {
-      if (t.last == null) t.addError(BackendException("Can't reach the PC"));
+      if (t.last == null) t.addError(reason);
     }
     final delay = Duration(seconds: min(30, 1 << min(_attempt++, 5)));
     _retry?.cancel();

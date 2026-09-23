@@ -69,12 +69,18 @@ void main() {
     expect(await backend.ping(), isA<Duration>());
   });
 
-  test('a wrong token fails requests with the server message', () async {
+  test('a wrong token fails streams and requests with a clear error', () async {
     final intruder = HttpAgentBackend(
       baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
       token: 'wrong',
     );
     addTearDown(intruder.dispose);
+    await expectLater(
+      intruder.watchAgents().first,
+      throwsA(
+        isA<BackendException>().having((e) => e.statusCode, 'statusCode', 401),
+      ),
+    );
     await expectLater(
       intruder.ping(),
       throwsA(
