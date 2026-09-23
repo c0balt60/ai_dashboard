@@ -535,4 +535,80 @@ class MockSeed {
       ),
     ],
   };
+
+  /// Local midnight [days] from today (negative for the past).
+  DateTime _day(int days) =>
+      DateTime(now.year, now.month, now.day).add(Duration(days: days));
+
+  late final List<TodoList> todoLists = [
+    TodoList(
+      id: 'l1',
+      title: 'v1.2 release',
+      createdAt: _ago(days: 6),
+      updatedAt: _ago(hours: 3),
+      items: [
+        TodoItem(
+          id: 'i1',
+          title: 'Stripe webhooks live in production',
+          note: 'Check signature secrets are set on the prod host first.',
+          projectIds: const ['p2'],
+          agentIds: const ['a1'],
+          startDate: _day(-3),
+          dueDate: _day(2),
+          createdAt: _ago(days: 6),
+        ),
+        TodoItem(
+          id: 'i2',
+          title: 'Polish agent chat bubbles',
+          projectIds: const ['p1'],
+          agentIds: const ['a2'],
+          dueDate: _day(5),
+          createdAt: _ago(days: 5),
+        ),
+        TodoItem(
+          id: 'i3',
+          title: 'Get the flaky ML tests green',
+          projectIds: const ['p4'],
+          agentIds: const ['a4', 'a5'],
+          dueDate: _day(-1),
+          createdAt: _ago(days: 4),
+        ),
+        TodoItem(
+          id: 'i4',
+          title: 'Write release notes',
+          dueDate: _day(7),
+          createdAt: _ago(days: 3),
+        ),
+        TodoItem(
+          id: 'i5',
+          title: 'Rotate staging database credentials',
+          projectIds: const ['p2'],
+          done: true,
+          createdAt: _ago(days: 6),
+          completedAt: _ago(days: 1),
+        ),
+      ],
+    ),
+    TodoList(
+      id: 'l2',
+      title: 'Someday ideas',
+      createdAt: _ago(days: 12),
+      updatedAt: _ago(days: 2),
+      items: [
+        TodoItem(
+          id: 'i6',
+          title: 'Try Gemini for generating API test cases',
+          projectIds: const ['p2'],
+          agentIds: const ['a3'],
+          createdAt: _ago(days: 12),
+        ),
+        TodoItem(
+          id: 'i7',
+          title: 'Dark-mode screenshots for the portfolio',
+          projectIds: const ['p3'],
+          createdAt: _ago(days: 9),
+        ),
+      ],
+    ),
+  ];
 }

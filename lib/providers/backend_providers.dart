@@ -93,6 +93,49 @@ final tasksByStateProvider = Provider<Map<TaskState, List<AgentTask>>>((ref) {
   };
 });
 
+/// The user's to-do lists, most recently updated first.
+final todoListsProvider = StreamProvider<List<TodoList>>(
+  (ref) => ref
+      .watch(backendProvider)
+      .watchTodoLists()
+      .map(
+        (lists) =>
+            [...lists]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+      ),
+);
+
+final todoListProvider = Provider.family<TodoList?, String>((ref, id) {
+  final lists = ref.watch(todoListsProvider).value ?? const [];
+  return lists.where((l) => l.id == id).firstOrNull;
+});
+
+/// One list's items split into open (soonest due first, undated last) and
+/// done (most recently finished first).
+final todoItemsProvider =
+    Provider.family<({List<TodoItem> open, List<TodoItem> done}), String>((
+      ref,
+      listId,
+    ) {
+      final items = ref.watch(todoListProvider(listId))?.items ?? const [];
+      final open = items.where((i) => !i.done).toList()
+        ..sort((a, b) {
+          final byDue = switch ((a.dueDate, b.dueDate)) {
+            (null, null) => 0,
+            (null, _) => 1,
+            (_, null) => -1,
+            (final x?, final y?) => x.compareTo(y),
+          };
+          return byDue != 0 ? byDue : a.createdAt.compareTo(b.createdAt);
+        });
+      final done = items.where((i) => i.done).toList()
+        ..sort(
+          (a, b) => (b.completedAt ?? b.createdAt).compareTo(
+            a.completedAt ?? a.createdAt,
+          ),
+        );
+      return (open: open, done: done);
+    });
+
 /// Projects that currently have at least one running or waiting agent.
 final activeProjectIdsProvider = Provider<Set<String>>((ref) {
   final agents = ref.watch(agentsProvider).value ?? const [];

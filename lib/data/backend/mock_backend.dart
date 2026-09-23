@@ -28,6 +28,9 @@ class MockAgentBackend implements AgentBackend {
       _tasks[t.id] = t;
     }
     seed.messages.forEach((id, list) => _messages[id] = [...list]);
+    for (final l in seed.todoLists) {
+      _todoLists[l.id] = l;
+    }
     setSimulationEnabled(simulate);
   }
 
@@ -39,6 +42,7 @@ class MockAgentBackend implements AgentBackend {
   final _agents = <String, Agent>{};
   final _tasks = <String, AgentTask>{};
   final _messages = <String, List<ChatMessage>>{};
+  final _todoLists = <String, TodoList>{};
   final _changes = StreamController<void>.broadcast();
   Timer? _ticker;
   int _idCounter = 0;
@@ -246,6 +250,95 @@ class MockAgentBackend implements AgentBackend {
         lastActive: now,
       );
     }
+    _notify();
+  }
+
+  @override
+  Stream<List<TodoList>> watchTodoLists() =>
+      _watch(() => List.unmodifiable(_todoLists.values));
+
+  @override
+  Future<TodoList> createTodoList(String title) async {
+    final now = DateTime.now();
+    final list = TodoList(
+      id: _nextId('l'),
+      title: title,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _todoLists[list.id] = list;
+    _notify();
+    return list;
+  }
+
+  @override
+  Future<void> renameTodoList(String listId, String title) async {
+    final list = _todoLists[listId];
+    if (list == null) return;
+    _todoLists[listId] = list.copyWith(title: title, updatedAt: DateTime.now());
+    _notify();
+  }
+
+  @override
+  Future<void> deleteTodoList(String listId) async {
+    if (_todoLists.remove(listId) != null) _notify();
+  }
+
+  @override
+  Future<TodoItem> addTodoItem(
+    String listId, {
+    required String title,
+    String note = '',
+    List<String> projectIds = const [],
+    List<String> agentIds = const [],
+    DateTime? startDate,
+    DateTime? dueDate,
+  }) async {
+    final now = DateTime.now();
+    final item = TodoItem(
+      id: _nextId('i'),
+      title: title,
+      note: note,
+      projectIds: List.unmodifiable(projectIds),
+      agentIds: List.unmodifiable(agentIds),
+      startDate: startDate,
+      dueDate: dueDate,
+      createdAt: now,
+    );
+    final list = _todoLists[listId];
+    if (list == null) return item;
+    _todoLists[listId] = list.copyWith(
+      items: [...list.items, item],
+      updatedAt: now,
+    );
+    _notify();
+    return item;
+  }
+
+  @override
+  Future<void> updateTodoItem(String listId, TodoItem item) async {
+    final list = _todoLists[listId];
+    final previous = list?.items.where((i) => i.id == item.id).firstOrNull;
+    if (list == null || previous == null) return;
+    final now = DateTime.now();
+    final updated = item.done == previous.done
+        ? item
+        : item.copyWith(completedAt: () => item.done ? now : null);
+    _todoLists[listId] = list.copyWith(
+      items: [for (final i in list.items) i.id == item.id ? updated : i],
+      updatedAt: now,
+    );
+    _notify();
+  }
+
+  @override
+  Future<void> deleteTodoItem(String listId, String itemId) async {
+    final list = _todoLists[listId];
+    if (list == null) return;
+    _todoLists[listId] = list.copyWith(
+      items: list.items.where((i) => i.id != itemId).toList(),
+      updatedAt: DateTime.now(),
+    );
     _notify();
   }
 
