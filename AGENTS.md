@@ -33,13 +33,14 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 ```
 lib/
   main.dart                 ProviderScope(child: App())
-  app/                      app.dart (MaterialApp.router) · router.dart (go_router + AppRoutes) · shell_scaffold.dart (bottom NavigationBar) · theme.dart (M3 light/dark + StatusColors ThemeExtension)
+  app/                      app.dart (MaterialApp.router) · router.dart (go_router + AppRoutes) · shell_scaffold.dart (bottom NavigationBar, side rail from 840dp) · theme.dart (M3 light/dark + StatusColors and AppSurfaces ThemeExtensions)
   data/models/              immutable models with handwritten copyWith; models.dart re-exports them all
   data/backend/             agent_backend.dart (abstract contract) · mock_backend.dart · mock_seed.dart
   providers/                backend_providers.dart (streams + derived views) · settings_provider.dart
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
+                            page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame)
   widgets/status/           status system (see above)
-  widgets/sheets/           assign_agent, new_task, run_command bottom sheets
+  widgets/sheets/           assign_agent, new_task, run_command, quick_prompt bottom sheets
   features/<area>/          one folder per screen area
   utils/time_format.dart    timeAgo, formatDuration, clockTime
 ```
@@ -69,8 +70,12 @@ lib/
 - Keep dependencies minimal. Add a package only when it clearly pays for itself.
 - When unsure of an API, read the source in `%LOCALAPPDATA%\Pub\Cache\hosted\pub.dev\` or `C:\Users\elmtc\flutter\packages\flutter\lib` instead of guessing, and avoid deprecated APIs.
 
-## UI rules (mobile first)
+## UI rules (mobile first, web friendly)
 
+- Tab screens are built with `AppPage` (large title header, round `HeaderAction`s, theme toggle, centering gutter, pull-to-refresh). Don't give them their own Scaffold/AppBar or background; the shell paints `AppBackdrop`.
+- Detail screens use `AppBackdrop(child: Scaffold(backgroundColor: Colors.transparent, ...))`.
+- Cards are borderless on the backdrop (radius 24, `AppSurfaces.card`). Pastel tiles use `AppSurfaces.tint(accent, brightness)`.
+- From 840dp the shell shows a side rail and content centers at max 1100dp. Card lists go in `ResponsiveGrid`. Keep scroll views full width and center with padding, so the mouse wheel works anywhere. Never wrap a `LayoutBuilder` in `IntrinsicHeight`.
 - Single-column layouts, 16px side padding, touch targets of at least 48dp, and `SafeArea` everywhere.
 - Actions open modal bottom sheets. Sheets that can open from a tab use `useRootNavigator: true` and `isScrollControlled`, and add bottom padding from `MediaQuery.viewInsets` so the keyboard never covers inputs.
 - Primary actions go in FABs, filters in horizontally scrolling chips, and refreshes use pull-to-refresh.
@@ -99,7 +104,7 @@ C:\Users\elmtc\flutter\bin\flutter.bat run -d web-server --web-hostname 0.0.0.0 
 
 ## Testing
 
-- `test/widget_test.dart` is the smoke test. It sets a phone-sized view (1080×2340 at 3x), overrides `backendProvider` with `MockAgentBackend(simulate: false, latency: Duration.zero)`, visits every tab, and pushes the agent-chat and project routes.
+- `test/widget_test.dart` is the smoke test. It overrides `backendProvider` with `MockAgentBackend(simulate: false, latency: Duration.zero)`, visits every tab and pushes the agent-chat and project routes, once on a phone view (1080×2340 at 3x) and once on a desktop view (1440×900 at 1x, via the side rail). It also checks the header theme toggle.
 - `test/mock_backend_test.dart` holds unit tests for mock behaviour.
 - Status dots animate forever, so **never use `pumpAndSettle`**. Use `pump(const Duration(...))` instead.
 - Keep the suite small and meaningful, and run it once per change rather than repeatedly.
@@ -109,4 +114,5 @@ C:\Users\elmtc\flutter\bin\flutter.bat run -d web-server --web-hostname 0.0.0.0 
 - There is no real PC backend or server yet, and no authentication.
 - Settings are in memory only and not persisted.
 - The notification toggles are UI only; push notifications don't exist yet.
-- The layout doesn't adapt to tablet or desktop widths (by design, since the app is mobile first).
+- The theme choice isn't persisted; it resets on restart, like the other settings.
+- Web uses path URLs, so a static host needs to rewrite unknown paths to `index.html` (the Flutter dev server already does).
