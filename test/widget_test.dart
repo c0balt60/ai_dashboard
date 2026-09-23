@@ -101,6 +101,21 @@ Future<void> _pumpThemeChange(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
+/// Opens the "New list" sheet from the Tasks tab. Sheets animate in after
+/// the frame that pushes them, so it pumps once more before waiting.
+Future<BottomSheet> _openNewListSheet(WidgetTester tester) async {
+  ProviderScope.containerOf(tester.element(find.byType(App)))
+      .read(routerProvider)
+      .go(AppRoutes.tasks);
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.tap(find.text('My lists'));
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.tap(find.text('New list'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  return tester.widget<BottomSheet>(find.byType(BottomSheet));
+}
+
 void main() {
   testWidgets('every tab and detail screen renders on a phone-sized screen', (
     tester,
@@ -188,5 +203,23 @@ void main() {
     await tester.tap(find.byType(ThemeToggleButton));
     await _pumpThemeChange(tester);
     expect(brightness(), Brightness.light);
+  });
+
+  testWidgets('sheets show a drag handle on phones', (tester) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    expect((await _openNewListSheet(tester)).showDragHandle, isTrue);
+    expect(find.byTooltip('Close'), findsNothing);
+  });
+
+  testWidgets('sheets swap the drag handle for a close button on desktop', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1440, 900), pixelRatio: 1);
+    expect((await _openNewListSheet(tester)).showDragHandle, isFalse);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(BottomSheet), findsNothing);
   });
 }
