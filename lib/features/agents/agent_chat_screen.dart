@@ -1,19 +1,25 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../app/theme.dart';
 import '../../data/models/models.dart';
 import '../../providers/backend_providers.dart';
 import '../../utils/time_format.dart';
 import '../../widgets/common.dart';
+import '../../widgets/layout.dart';
+import '../../widgets/prompt_bar.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
 import '../../widgets/status/agent_avatar.dart';
 import '../../widgets/status/status_badge.dart';
 import '../../widgets/status/status_visuals.dart';
+
+const _chatMaxWidth = 820.0;
 
 /// Full-screen chat with one agent: what it is working on, the conversation,
 /// and a composer for new prompts.
@@ -93,14 +99,17 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
   Widget build(BuildContext context) {
     final agent = ref.watch(agentProvider(widget.agentId));
     if (agent == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Agent')),
-        body: AsyncValueView(
-          ref.watch(agentsProvider),
-          data: (_) => const Center(
-            child: EmptyState(
-              icon: Icons.smart_toy_outlined,
-              message: 'This agent is no longer available on your PC.',
+      return AppBackdrop(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(title: const Text('Agent')),
+          body: AsyncValueView(
+            ref.watch(agentsProvider),
+            data: (_) => const Center(
+              child: EmptyState(
+                icon: Icons.smart_toy_outlined,
+                message: 'This agent is no longer available on your PC.',
+              ),
             ),
           ),
         ),
@@ -109,79 +118,98 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
 
     final theme = Theme.of(context);
     final messagesAsync = ref.watch(messagesProvider(agent.id));
+    // With the keyboard up or in landscape there is no room for the banner
+    // details and the quick prompts next to the messages.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final cramped = keyboardOpen || MediaQuery.sizeOf(context).height < 600;
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            AgentAvatar(agent, radius: 16),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    agent.name,
-                    style: theme.textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  StatusBadge(agent.status.visual(context), dense: true),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          PopupMenuButton<_ChatAction>(
-            tooltip: 'More',
-            onSelected: (action) => _onAction(action, agent),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: _ChatAction.assign,
-                child: _MenuRow(
-                  Icons.drive_file_move,
-                  'Assign to folder / task',
+    return AppBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              AgentAvatar(agent, radius: 16),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      agent.name,
+                      style: theme.textTheme.titleMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    StatusBadge(agent.status.visual(context), dense: true),
+                  ],
                 ),
-              ),
-              if (agent.projectId != null)
-                const PopupMenuItem(
-                  value: _ChatAction.openProject,
-                  child: _MenuRow(Icons.folder_open, 'Open project'),
-                ),
-              const PopupMenuItem(
-                value: _ChatAction.stop,
-                child: _MenuRow(Icons.stop_circle_outlined, 'Stop agent'),
-              ),
-              const PopupMenuItem(
-                value: _ChatAction.clear,
-                child: _MenuRow(Icons.delete_sweep_outlined, 'Clear chat'),
               ),
             ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _WorkingBanner(
-            agent: agent,
-            expanded: _bannerExpanded,
-            onToggle: () => setState(() => _bannerExpanded = !_bannerExpanded),
-          ),
-          Expanded(
-            child: AsyncValueView(
-              messagesAsync,
-              data: (messages) => _MessageList(
-                agent: agent,
-                messages: messages,
-                controller: _scroll,
-              ),
+          actions: [
+            PopupMenuButton<_ChatAction>(
+              tooltip: 'More',
+              onSelected: (action) => _onAction(action, agent),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: _ChatAction.assign,
+                  child: _MenuRow(
+                    Icons.drive_file_move,
+                    'Assign to folder / task',
+                  ),
+                ),
+                if (agent.projectId != null)
+                  const PopupMenuItem(
+                    value: _ChatAction.openProject,
+                    child: _MenuRow(Icons.folder_open, 'Open project'),
+                  ),
+                const PopupMenuItem(
+                  value: _ChatAction.stop,
+                  child: _MenuRow(Icons.stop_circle_outlined, 'Stop agent'),
+                ),
+                const PopupMenuItem(
+                  value: _ChatAction.clear,
+                  child: _MenuRow(Icons.delete_sweep_outlined, 'Clear chat'),
+                ),
+              ],
             ),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: Column(
+            children: [
+              ContentWidth(
+                maxWidth: _chatMaxWidth,
+                child: _WorkingBanner(
+                  agent: agent,
+                  expanded: _bannerExpanded && !cramped,
+                  onToggle: () =>
+                      setState(() => _bannerExpanded = !_bannerExpanded),
+                ),
+              ),
+              Expanded(
+                child: AsyncValueView(
+                  messagesAsync,
+                  data: (messages) => _MessageList(
+                    agent: agent,
+                    messages: messages,
+                    controller: _scroll,
+                  ),
+                ),
+              ),
+              _Composer(
+                hint: 'Message ${agent.name}',
+                onSend: _send,
+                showQuickPrompts: !keyboardOpen,
+              ),
+            ],
           ),
-          _Composer(hint: 'Message ${agent.name}', onSend: _send),
-        ],
+        ),
       ),
     );
   }
@@ -205,6 +233,8 @@ class _MenuRow extends StatelessWidget {
   }
 }
 
+/// Rounded pastel card showing the agent's folder, branch and current task,
+/// or an Assign prompt when it has no project yet.
 class _WorkingBanner extends ConsumerWidget {
   const _WorkingBanner({
     required this.agent,
@@ -220,6 +250,7 @@ class _WorkingBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final surfaces = AppSurfaces.of(context);
     final project = agent.projectId == null
         ? null
         : ref.watch(projectProvider(agent.projectId!));
@@ -229,11 +260,21 @@ class _WorkingBanner extends ConsumerWidget {
     final muted = theme.textTheme.bodySmall?.copyWith(
       color: scheme.onSurfaceVariant,
     );
+    final accent = task?.state.visual(context).color ?? scheme.primary;
+
+    Widget card(Widget child) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Material(
+        color: surfaces.tint(accent, theme.brightness),
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
 
     if (project == null) {
-      return Material(
-        color: scheme.surfaceContainer,
-        child: Padding(
+      return card(
+        Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
           child: Row(
             children: [
@@ -260,9 +301,8 @@ class _WorkingBanner extends ConsumerWidget {
         ? project.name
         : '${project.name} · ${task.title}';
 
-    return Material(
-      color: scheme.surfaceContainer,
-      child: Column(
+    return card(
+      Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           InkWell(
@@ -270,10 +310,10 @@ class _WorkingBanner extends ConsumerWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 48),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
                 child: Row(
                   children: [
-                    Icon(Icons.work_outline, size: 20, color: scheme.primary),
+                    Icon(Icons.work_outline, size: 20, color: accent),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -314,7 +354,7 @@ class _WorkingBanner extends ConsumerWidget {
             child: !expanded
                 ? const SizedBox(width: double.infinity)
                 : Padding(
-                    padding: const EdgeInsets.fromLTRB(48, 0, 16, 12),
+                    padding: const EdgeInsets.fromLTRB(48, 0, 16, 14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -345,7 +385,10 @@ class _WorkingBanner extends ConsumerWidget {
                                   child: LinearProgressIndicator(
                                     value: task.progress,
                                     minHeight: 6,
-                                    color: task.state.visual(context).color,
+                                    color: accent,
+                                    backgroundColor: accent.withValues(
+                                      alpha: 0.18,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -403,27 +446,41 @@ class _MessageList extends StatelessWidget {
       );
     }
 
-    // The list is reversed so it sticks to the newest message; index 0 is the
-    // bottom of the screen (the typing indicator, when shown).
-    final offset = typing ? 1 : 0;
-    return ListView.builder(
-      controller: controller,
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      itemCount: messages.length + offset,
-      itemBuilder: (context, i) {
-        if (typing && i == 0) return _TypingIndicator(agent.type);
-        final index = messages.length - 1 - (i - offset);
-        final message = messages[index];
-        final newer = index + 1 < messages.length ? messages[index + 1] : null;
-        final older = index > 0 ? messages[index - 1] : null;
-        return Padding(
-          padding: EdgeInsets.only(top: older?.role == message.role ? 2 : 10),
-          child: _MessageBubble(
-            message: message,
-            agentType: agent.type,
-            showAvatar: newer?.role != message.role,
-          ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The list spans the full width so the wheel and scrollbar work
+        // anywhere, while side padding centers a column of _chatMaxWidth.
+        final column = math.min(constraints.maxWidth, _chatMaxWidth);
+        final side = 12 + (constraints.maxWidth - column) / 2;
+        final bubbleWidth = math.min(column * 0.78, 560.0);
+        // The list is reversed so it sticks to the newest message; index 0 is
+        // the bottom of the screen (the typing indicator, when shown).
+        final offset = typing ? 1 : 0;
+        return ListView.builder(
+          controller: controller,
+          reverse: true,
+          padding: EdgeInsets.fromLTRB(side, 12, side, 8),
+          itemCount: messages.length + offset,
+          itemBuilder: (context, i) {
+            if (typing && i == 0) return _TypingIndicator(agent.type);
+            final index = messages.length - 1 - (i - offset);
+            final message = messages[index];
+            final newer = index + 1 < messages.length
+                ? messages[index + 1]
+                : null;
+            final older = index > 0 ? messages[index - 1] : null;
+            return Padding(
+              padding: EdgeInsets.only(
+                top: older?.role == message.role ? 2 : 10,
+              ),
+              child: _MessageBubble(
+                message: message,
+                agentType: agent.type,
+                showAvatar: newer?.role != message.role,
+                maxWidth: bubbleWidth,
+              ),
+            );
+          },
         );
       },
     );
@@ -435,11 +492,13 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.agentType,
     required this.showAvatar,
+    required this.maxWidth,
   });
 
   final ChatMessage message;
   final AgentType agentType;
   final bool showAvatar;
+  final double maxWidth;
 
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: message.text));
@@ -452,6 +511,7 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final surfaces = AppSurfaces.of(context);
 
     if (message.role == MessageRole.system) {
       return Center(
@@ -459,7 +519,7 @@ class _MessageBubble extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest,
+            color: surfaces.card,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -474,17 +534,13 @@ class _MessageBubble extends StatelessWidget {
     }
 
     final isUser = message.role == MessageRole.user;
-    final background = isUser
-        ? scheme.primaryContainer
-        : scheme.surfaceContainerHigh;
-    final foreground = isUser ? scheme.onPrimaryContainer : scheme.onSurface;
-    const radius = Radius.circular(18);
+    final background = isUser ? scheme.primary : surfaces.card;
+    final foreground = isUser ? scheme.onPrimary : scheme.onSurface;
+    const radius = Radius.circular(20);
     const tail = Radius.circular(4);
 
     final bubble = ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.sizeOf(context).width * 0.78,
-      ),
+      constraints: BoxConstraints(maxWidth: maxWidth),
       child: Material(
         color: background,
         borderRadius: BorderRadius.only(
@@ -605,11 +661,11 @@ class _TypingIndicatorState extends State<_TypingIndicator>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHigh,
+              color: AppSurfaces.of(context).card,
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                topRight: Radius.circular(18),
-                bottomRight: Radius.circular(18),
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
                 bottomLeft: Radius.circular(4),
               ),
             ),
@@ -648,11 +704,18 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   }
 }
 
+/// Quick prompts above a floating prompt bar. On desktop and web, Enter sends
+/// and Shift+Enter inserts a newline; on phones Enter always inserts a newline.
 class _Composer extends StatefulWidget {
-  const _Composer({required this.hint, required this.onSend});
+  const _Composer({
+    required this.hint,
+    required this.onSend,
+    required this.showQuickPrompts,
+  });
 
   final String hint;
   final ValueChanged<String> onSend;
+  final bool showQuickPrompts;
 
   @override
   State<_Composer> createState() => _ComposerState();
@@ -666,11 +729,22 @@ class _ComposerState extends State<_Composer> {
     (Icons.play_arrow_outlined, 'Continue'),
   ];
 
+  // On the web this reports the browser's OS, so phone browsers keep Enter as
+  // a newline like the native app.
+  static bool get _enterSends => switch (defaultTargetPlatform) {
+    TargetPlatform.windows ||
+    TargetPlatform.macOS ||
+    TargetPlatform.linux => true,
+    _ => false,
+  };
+
   final _controller = TextEditingController();
+  late final _focus = FocusNode(onKeyEvent: _onKey);
 
   @override
   void dispose() {
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -681,72 +755,103 @@ class _ComposerState extends State<_Composer> {
     _controller.clear();
   }
 
+  /// Claims plain Enter before the platform text input sees it, so no newline
+  /// is inserted. Shift+Enter and Enter that confirms an IME composition are
+  /// left alone.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (!_enterSends) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key != LogicalKeyboardKey.enter &&
+        key != LogicalKeyboardKey.numpadEnter) {
+      return KeyEventResult.ignored;
+    }
+    if (HardwareKeyboard.instance.isShiftPressed ||
+        _controller.value.composing.isValid) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) _submit();
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: Row(
-                children: [
-                  for (final (icon, label) in _quickPrompts)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        avatar: Icon(icon, size: 18),
-                        label: Text(label),
-                        onPressed: () => widget.onSend(label),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      minLines: 1,
-                      maxLines: 5,
-                      keyboardType: TextInputType.multiline,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: widget.hint,
-                        fillColor: scheme.surfaceContainerHighest,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+    return SafeArea(
+      top: false,
+      child: ContentWidth(
+        maxWidth: _chatMaxWidth,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.showQuickPrompts) ...[
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      for (final (icon, label) in _quickPrompts)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ActionChip(
+                            avatar: Icon(icon, size: 18),
+                            label: Text(label),
+                            onPressed: () => widget.onSend(label),
+                          ),
                         ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: PromptBarFrame(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 6, 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focus,
+                          minLines: 1,
+                          maxLines: 5,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            hintText: widget.hint,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: ValueListenableBuilder(
+                          valueListenable: _controller,
+                          builder: (context, value, _) => IconButton.filled(
+                            tooltip: _enterSends ? 'Send (Enter)' : 'Send',
+                            onPressed: value.text.trim().isEmpty
+                                ? null
+                                : _submit,
+                            icon: const Icon(Icons.arrow_upward),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  ValueListenableBuilder(
-                    valueListenable: _controller,
-                    builder: (context, value, _) => IconButton.filled(
-                      tooltip: 'Send',
-                      onPressed: value.text.trim().isEmpty ? null : _submit,
-                      icon: const Icon(Icons.send),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
