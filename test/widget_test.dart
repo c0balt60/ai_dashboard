@@ -10,6 +10,8 @@ import 'package:ai_dashboard/features/settings/settings_screen.dart';
 import 'package:ai_dashboard/data/models/models.dart';
 import 'package:ai_dashboard/features/tasks/new_task_screen.dart';
 import 'package:ai_dashboard/features/tasks/tasks_screen.dart';
+import 'package:ai_dashboard/features/todos/todo_list_screen.dart';
+import 'package:ai_dashboard/features/todos/todo_lists_view.dart';
 import 'package:ai_dashboard/providers/backend_providers.dart';
 import 'package:ai_dashboard/widgets/page.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +55,8 @@ Future<void> _pumpApp(
   expect(find.byType(DashboardScreen), findsOneWidget);
 }
 
-/// Visits every tab through [navigation] and then pushes both detail routes.
+/// Visits every tab through [navigation], switches the Tasks tab to its
+/// lists and then pushes every full-screen route.
 Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   for (final MapEntry(key: label, value: screen) in _tabs.entries) {
     await tester.tap(
@@ -66,6 +69,12 @@ Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   final router = ProviderScope.containerOf(tester.element(find.byType(App)))
       .read(routerProvider);
 
+  router.go(AppRoutes.tasks);
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.tap(find.text('My lists'));
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.byType(TodoListsView), findsOneWidget);
+
   router.push(AppRoutes.agent('a1'));
   await tester.pump(const Duration(milliseconds: 500));
   expect(find.byType(AgentChatScreen), findsOneWidget);
@@ -74,9 +83,15 @@ Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   await tester.pump(const Duration(milliseconds: 500));
   expect(find.byType(ProjectDashboardScreen), findsOneWidget);
 
-  router.push(AppRoutes.newTask());
+  router.push(AppRoutes.todoList('l1'));
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.byType(TodoListScreen), findsOneWidget);
+
+  // A to-do handed off to an agent opens the page prefilled.
+  router.push(AppRoutes.newTask(title: 'Ship the lists', agentId: 'a1'));
   await tester.pump(const Duration(milliseconds: 500));
   expect(find.byType(NewTaskScreen), findsOneWidget);
+  expect(find.text('Ship the lists'), findsOneWidget);
 }
 
 /// MaterialApp animates theme changes: one frame starts the animation, the

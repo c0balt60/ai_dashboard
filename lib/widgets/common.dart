@@ -206,11 +206,13 @@ class StatTile extends StatelessWidget {
 }
 
 /// Small rounded label with an optional leading icon, e.g. a branch name.
+/// A [color] tints the icon and text, e.g. for an overdue date.
 class InfoChip extends StatelessWidget {
-  const InfoChip(this.label, {super.key, this.icon});
+  const InfoChip(this.label, {super.key, this.icon, this.color});
 
   final String label;
   final IconData? icon;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -225,13 +227,19 @@ class InfoChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              icon,
+              size: 14,
+              color: color ?? theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 4),
           ],
           Flexible(
             child: Text(
               label,
-              style: theme.textTheme.labelSmall,
+              style: color == null
+                  ? theme.textTheme.labelSmall
+                  : theme.textTheme.labelSmall?.copyWith(color: color),
               overflow: TextOverflow.ellipsis,
             ),
           ),

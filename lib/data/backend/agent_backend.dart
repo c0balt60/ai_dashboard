@@ -37,6 +37,30 @@ abstract interface class AgentBackend {
 
   Future<void> updateTaskState(String taskId, TaskState state);
 
+  /// The user's own to-do lists. Agents never act on these directly.
+  Stream<List<TodoList>> watchTodoLists();
+
+  Future<TodoList> createTodoList(String title);
+  Future<void> renameTodoList(String listId, String title);
+  Future<void> deleteTodoList(String listId);
+
+  /// Appends an item to a list.
+  Future<TodoItem> addTodoItem(
+    String listId, {
+    required String title,
+    String note = '',
+    List<String> projectIds = const [],
+    List<String> agentIds = const [],
+    DateTime? startDate,
+    DateTime? dueDate,
+  });
+
+  /// Replaces an item's fields. Flipping [TodoItem.done] stamps or clears
+  /// [TodoItem.completedAt].
+  Future<void> updateTodoItem(String listId, TodoItem item);
+
+  Future<void> deleteTodoItem(String listId, String itemId);
+
   Future<String> runCommand(String projectId, String command);
 
   Future<Duration> ping();

@@ -18,12 +18,15 @@ const _maxWidth = 820.0;
 
 /// Full-screen, assistant-style page for creating a task: describe the work
 /// in the composer and pick its project and optional agent from the dropdown
-/// buttons inside it. The description becomes the task's title.
+/// buttons inside it. The description becomes the task's title. It can be
+/// prefilled, e.g. when handing off one of the user's to-dos.
 class NewTaskScreen extends ConsumerStatefulWidget {
-  const NewTaskScreen({super.key, this.projectId});
+  const NewTaskScreen({super.key, this.projectId, this.title, this.agentId});
 
   /// Preselected project; defaults to the most recently active one.
   final String? projectId;
+  final String? title;
+  final String? agentId;
 
   @override
   ConsumerState<NewTaskScreen> createState() => _NewTaskScreenState();
@@ -38,12 +41,12 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
     ('Update docs', 'Update the docs for '),
   ];
 
-  final _description = TextEditingController();
+  late final _description = TextEditingController(text: widget.title);
   late final _focus = FocusNode(
     onKeyEvent: submitOnEnter(_description, _create),
   );
   late String? _projectId = widget.projectId;
-  String? _agentId;
+  late String? _agentId = widget.agentId;
   bool _submitting = false;
 
   @override

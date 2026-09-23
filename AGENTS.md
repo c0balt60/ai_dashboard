@@ -23,11 +23,12 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 | Project Dashboard | `/project/:id` (full screen) | Tabs: Overview (agents, branch, current task progress and steps), Tests (runs with failing tests), History (past tasks and activity log). A FAB opens "Run command" and an app-bar action opens "Assign agent" |
 | Agents | `/agents` (tab) | Status filter chips and agent cards |
 | Agent Screen (chat) | `/agent/:id` (full screen) | Centered agent title (tap to switch agent) with status pill, collapsible "Currently working on" banner, greeting with suggestion pills while empty, chat bubbles, typing indicator, quick-prompt chips, composer card (assign button, send); assign to folder/task, stop, clear |
-| Tasks | `/tasks` (tab) | Queue grouped as Active, Waiting, Backlog, Done (kanban columns on wide screens). Cards read like "(Codex) Implement X · in project". Task details sheet |
-| New Task | `/new-task?project=<id>` (full screen) | Assistant-style page: greeting, template chips and a suggest chip, and a composer card whose text becomes the task title, with project and agent dropdown buttons (`MenuAnchor`) inside it (no agent means backlog). Opened from the Tasks FAB and the dashboard "+" |
+| Tasks | `/tasks` (tab) | Two views picked by chips under the header. **Agent queue:** grouped as Active, Waiting, Backlog, Done (kanban columns on wide screens); cards read like "(Codex) Implement X · in project"; task details sheet. **My lists:** the user's own to-do lists (`TodoList`/`TodoItem`) with progress, timeline and overdue count. The FAB follows the view (New task / New list) |
+| New Task | `/new-task?project=&title=&agent=` (full screen, all optional) | Assistant-style page: greeting, template chips and a suggest chip, and a composer card whose text becomes the task title, with project and agent dropdown buttons (`MenuAnchor`) inside it (no agent means backlog). Opened from the Tasks FAB, the dashboard "+" and a to-do's "send to agent", which prefills it |
+| To-do list | `/list/:id` (full screen) | Open items soonest due first, collapsible Done. Items are tagged with projects and agents, have an optional start and due date, and can be handed off as a prefilled agent task. Rename, clear done, delete |
 | Settings | `/settings` (tab) | PC URL and connection test, simulation toggle, theme, notification toggles (not wired up yet) |
 
-**Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test and log visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.
+**Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test, log and to-do due-date visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.
 
 ## Architecture
 
@@ -41,7 +42,7 @@ lib/
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
                             page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame, PromptGreeting, SuggestionPill, submitOnEnter) · glow.dart (FloatingGlow, BottomHaze)
   widgets/status/           status system (see above)
-  widgets/sheets/           assign_agent, run_command bottom sheets
+  widgets/sheets/           assign_agent, run_command, todo_list, todo_item bottom sheets
   features/<area>/          one folder per screen area
   utils/time_format.dart    timeAgo, formatDuration, clockTime
 ```
