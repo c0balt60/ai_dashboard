@@ -21,8 +21,9 @@ import '../../widgets/status/status_visuals.dart';
 
 const _chatMaxWidth = 820.0;
 
-/// Full-screen chat with one agent: what it is working on, the conversation,
-/// and a composer for new prompts.
+/// Full-screen chat with one agent: what it is working on, a greeting with
+/// suggestions while the chat is empty, the conversation, and a composer for
+/// new prompts. Tapping the title switches to another agent.
 class AgentChatScreen extends ConsumerStatefulWidget {
   const AgentChatScreen({super.key, required this.agentId});
 
@@ -36,7 +37,7 @@ enum _ChatAction { assign, openProject, stop, clear }
 
 class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
   final _scroll = ScrollController();
-  bool _bannerExpanded = true;
+  bool _bannerExpanded = false;
 
   @override
   void dispose() {
@@ -127,31 +128,44 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
+          centerTitle: true,
           titleSpacing: 0,
-          title: Row(
-            children: [
-              AgentAvatar(agent, radius: 16),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          title: Semantics(
+            button: true,
+            label: 'Chatting with ${agent.name}. Switch agent',
+            excludeSemantics: true,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => _showAgentSwitcher(context, agent.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      agent.name,
-                      style: theme.textTheme.titleMedium,
-                      overflow: TextOverflow.ellipsis,
+                    AgentAvatar(agent, radius: 13),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        agent.name,
+                        style: theme.textTheme.titleLarge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    StatusBadge(agent.status.visual(context), dense: true),
+                    Icon(
+                      Icons.expand_more,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
           actions: [
+            StatusBadge(agent.status.visual(context)),
             PopupMenuButton<_ChatAction>(
               tooltip: 'More',
+              icon: const Icon(Icons.short_text),
               onSelected: (action) => _onAction(action, agent),
               itemBuilder: (context) => [
                 const PopupMenuItem(
@@ -195,16 +209,21 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
               Expanded(
                 child: AsyncValueView(
                   messagesAsync,
-                  data: (messages) => _MessageList(
-                    agent: agent,
-                    messages: messages,
-                    controller: _scroll,
-                  ),
+                  data: (messages) => messages.isEmpty
+                      ? _Greeting(agent: agent, onSend: _send)
+                      : _MessageList(
+                          agent: agent,
+                          messages: messages,
+                          controller: _scroll,
+                        ),
                 ),
               ),
               _Composer(
-                hint: 'Message ${agent.name}',
+                hint: 'Ask ${agent.name} anything…',
                 onSend: _send,
+                onSwitchAgent: () => _showAgentSwitcher(context, agent.id),
+                onAssign: () =>
+                    showAssignAgentSheet(context, agentId: agent.id),
                 showQuickPrompts: !keyboardOpen,
               ),
             ],
@@ -417,6 +436,170 @@ class _WorkingBanner extends ConsumerWidget {
   }
 }
 
+/// Lets the owner move this chat to another agent; the new chat replaces
+/// this one so back still returns to where the chat was opened from.
+Future<void> _showAgentSwitcher(BuildContext context, String currentId) {
+  final router = GoRouter.of(context);
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (sheetContext) => Consumer(
+      builder: (context, ref, _) {
+        final theme = Theme.of(context);
+        final agents = ref.watch(agentsProvider).value ?? const [];
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text('Chat with', style: theme.textTheme.titleLarge),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+                  children: [
+                    for (final agent in agents)
+                      ListTile(
+                        selected: agent.id == currentId,
+                        leading: AgentAvatar(agent, radius: 16),
+                        title: Text(
+                          agent.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${agent.type.label} · ${agent.activity}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: agent.id == currentId
+                            ? const Icon(Icons.check)
+                            : StatusBadge(
+                                agent.status.visual(context),
+                                dense: true,
+                              ),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          if (agent.id != currentId) {
+                            router.pushReplacement(AppRoutes.agent(agent.id));
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}
+
+/// Empty-chat welcome: a large greeting and tappable suggestion pills that
+/// send their prompt straight away.
+class _Greeting extends ConsumerWidget {
+  const _Greeting({required this.agent, required this.onSend});
+
+  final Agent agent;
+  final ValueChanged<String> onSend;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final task = agent.currentTaskId == null
+        ? null
+        : ref.watch(taskProvider(agent.currentTaskId!));
+    final suggestions = [
+      if (task != null) ('▶️', 'Continue with "${task.title}"'),
+      ('🧪', 'Run the tests and fix any failures'),
+      ('📋', "Summarize what you've done so far"),
+      ('🔍', 'Review the latest changes for bugs'),
+      ('🌿', 'Commit your changes on a new branch'),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final column = math.min(constraints.maxWidth, _chatMaxWidth);
+        final side = 24 + (constraints.maxWidth - column) / 2;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(side, 32, side, 16),
+          children: [
+            Text(
+              'Good to see you again! What should ${agent.name} work on?',
+              style: theme.textTheme.headlineMedium?.copyWith(
+                color: Color.lerp(scheme.onSurfaceVariant, scheme.primary, 0.3),
+              ),
+            ),
+            const SizedBox(height: 24),
+            for (final (emoji, prompt) in suggestions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: _SuggestionPill(
+                    emoji: emoji,
+                    label: prompt,
+                    onTap: () => onSend(prompt),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SuggestionPill extends StatelessWidget {
+  const _SuggestionPill({
+    required this.emoji,
+    required this.label,
+    required this.onTap,
+  });
+
+  final String emoji;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(28),
+      side: BorderSide(color: theme.colorScheme.outlineVariant),
+    );
+    return Material(
+      color: AppSurfaces.of(context).card,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: shape,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ExcludeSemantics(
+                child: Text(emoji, style: const TextStyle(fontSize: 20)),
+              ),
+              const SizedBox(width: 12),
+              Flexible(child: Text(label, style: theme.textTheme.bodyLarge)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageList extends StatelessWidget {
   const _MessageList({
     required this.agent,
@@ -434,17 +617,6 @@ class _MessageList extends StatelessWidget {
         agent.status == AgentStatus.running &&
         messages.isNotEmpty &&
         messages.last.role == MessageRole.user;
-
-    if (messages.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
-          child: EmptyState(
-            icon: Icons.chat_bubble_outline,
-            message: 'No messages yet.\nSend ${agent.name} a prompt below.',
-          ),
-        ),
-      );
-    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -704,17 +876,23 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   }
 }
 
-/// Quick prompts above a floating prompt bar. On desktop and web, Enter sends
-/// and Shift+Enter inserts a newline; on phones Enter always inserts a newline.
+/// Quick-prompt chips above a large rounded composer card: the message field
+/// on top, a round assign button and the send button below. On desktop and
+/// web, Enter sends and Shift+Enter inserts a newline; on phones Enter always
+/// inserts a newline.
 class _Composer extends StatefulWidget {
   const _Composer({
     required this.hint,
     required this.onSend,
+    required this.onSwitchAgent,
+    required this.onAssign,
     required this.showQuickPrompts,
   });
 
   final String hint;
   final ValueChanged<String> onSend;
+  final VoidCallback onSwitchAgent;
+  final VoidCallback onAssign;
   final bool showQuickPrompts;
 
   @override
@@ -723,10 +901,10 @@ class _Composer extends StatefulWidget {
 
 class _ComposerState extends State<_Composer> {
   static const _quickPrompts = [
-    (Icons.science_outlined, 'Run tests'),
-    (Icons.summarize_outlined, 'Summarize progress'),
-    (Icons.commit, 'Commit changes'),
-    (Icons.play_arrow_outlined, 'Continue'),
+    'Run tests',
+    'Summarize progress',
+    'Commit changes',
+    'Continue',
   ];
 
   // On the web this reports the browser's OS, so phone browsers keep Enter as
@@ -775,6 +953,15 @@ class _ComposerState extends State<_Composer> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final chipLabel = theme.textTheme.titleSmall?.copyWith(
+      color: scheme.onSurface,
+    );
+    final outlined = IconButton.styleFrom(
+      side: BorderSide(color: scheme.outlineVariant),
+    );
+
     return SafeArea(
       top: false,
       child: ContentWidth(
@@ -787,64 +974,96 @@ class _ComposerState extends State<_Composer> {
               if (widget.showQuickPrompts) ...[
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
                     children: [
-                      for (final (icon, label) in _quickPrompts)
+                      ActionChip(
+                        tooltip: 'Switch agent',
+                        padding: const EdgeInsets.all(10),
+                        label: Icon(
+                          Icons.auto_awesome_outlined,
+                          size: 20,
+                          color: scheme.onSurface,
+                        ),
+                        onPressed: widget.onSwitchAgent,
+                      ),
+                      for (final label in _quickPrompts)
                         Padding(
-                          padding: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.only(left: 8),
                           child: ActionChip(
-                            avatar: Icon(icon, size: 18),
-                            label: Text(label),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
+                            label: Text(label, style: chipLabel),
                             onPressed: () => widget.onSend(label),
                           ),
                         ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
               ],
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: PromptBarFrame(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 6, 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          focusNode: _focus,
-                          minLines: 1,
-                          maxLines: 5,
-                          keyboardType: TextInputType.multiline,
-                          textCapitalization: TextCapitalization.sentences,
-                          decoration: InputDecoration(
-                            hintText: widget.hint,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            filled: false,
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 14,
-                            ),
+                      TextField(
+                        controller: _controller,
+                        focusNode: _focus,
+                        minLines: 1,
+                        maxLines: 5,
+                        keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: theme.textTheme.bodyLarge,
+                        decoration: InputDecoration(
+                          hintText: widget.hint,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          contentPadding: const EdgeInsets.fromLTRB(
+                            12,
+                            12,
+                            12,
+                            8,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: ValueListenableBuilder(
-                          valueListenable: _controller,
-                          builder: (context, value, _) => IconButton.filled(
-                            tooltip: _enterSends ? 'Send (Enter)' : 'Send',
-                            onPressed: value.text.trim().isEmpty
-                                ? null
-                                : _submit,
-                            icon: const Icon(Icons.arrow_upward),
+                      Row(
+                        children: [
+                          IconButton.outlined(
+                            style: outlined,
+                            tooltip: 'Assign to folder / task',
+                            onPressed: widget.onAssign,
+                            icon: const Icon(Icons.add),
                           ),
-                        ),
+                          const Spacer(),
+                          ValueListenableBuilder(
+                            valueListenable: _controller,
+                            builder: (context, value, _) {
+                              final tooltip = _enterSends
+                                  ? 'Send (Enter)'
+                                  : 'Send';
+                              const icon = Icon(Icons.arrow_upward);
+                              return value.text.trim().isEmpty
+                                  ? IconButton.outlined(
+                                      style: outlined,
+                                      tooltip: tooltip,
+                                      onPressed: null,
+                                      icon: icon,
+                                    )
+                                  : IconButton.filled(
+                                      tooltip: tooltip,
+                                      onPressed: _submit,
+                                      icon: icon,
+                                    );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
