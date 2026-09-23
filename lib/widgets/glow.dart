@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
 
-/// A wide primary-tinted halo plus a tight shadow for definition. The halo is
+/// A close primary-tinted halo plus a tight shadow for definition. The halo is
 /// stronger in dark mode, where a light glow reads better than a shadow.
 List<BoxShadow> floatingGlow(BuildContext context) {
   final theme = Theme.of(context);
@@ -14,10 +14,9 @@ List<BoxShadow> floatingGlow(BuildContext context) {
   final scheme = theme.colorScheme;
   return [
     BoxShadow(
-      color: scheme.primary.withValues(alpha: dark ? 0.32 : 0.22),
-      blurRadius: 40,
-      spreadRadius: 2,
-      offset: const Offset(0, 10),
+      color: scheme.primary.withValues(alpha: dark ? 0.24 : 0.16),
+      blurRadius: 16,
+      offset: const Offset(0, 4),
     ),
     BoxShadow(
       color: scheme.shadow.withValues(alpha: dark ? 0.35 : 0.08),
