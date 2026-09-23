@@ -139,7 +139,7 @@ class AgentConfig {
     required this.name,
     required this.type,
     this.executable,
-    this.args,
+    this.extraArgs = const [],
     this.projectId,
   });
 
@@ -151,7 +151,7 @@ class AgentConfig {
       name: name,
       type: type,
       executable: json['executable'] as String?,
-      args: json['args'] == null ? null : decodeStrings(json['args']),
+      extraArgs: decodeStrings(json['extraArgs']),
       projectId: json['projectId'] as String?,
     );
   }
@@ -163,8 +163,8 @@ class AgentConfig {
   /// Overrides the CLI program, e.g. a full path to `claude.exe`.
   final String? executable;
 
-  /// Overrides the CLI arguments. See the runners for placeholders.
-  final List<String>? args;
+  /// Extra CLI flags for every turn, e.g. Claude Code's permission flags.
+  final List<String> extraArgs;
 
   /// The project the agent starts out in.
   final String? projectId;
@@ -182,7 +182,7 @@ class ConfigException implements Exception {
 String slug(String name) {
   final s = name
       .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'[^a-z0-9_]+'), '-')
       .replaceAll(RegExp(r'^-+|-+$'), '');
   return s.isEmpty ? 'item' : s;
 }

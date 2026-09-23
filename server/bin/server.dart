@@ -12,6 +12,7 @@ import 'dart:io';
 import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard_server/api.dart';
 import 'package:ai_dashboard_server/config.dart';
+import 'package:ai_dashboard_server/local_backend.dart';
 import 'package:args/args.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -38,7 +39,7 @@ Future<void> main(List<String> args) async {
   final simulate = options.flag('simulate');
   final AgentBackend backend = simulate
       ? MockAgentBackend()
-      : throw UnimplementedError('Real agents are not wired up yet.');
+      : LocalAgentBackend(config);
 
   final handler = const Pipeline()
       .addMiddleware(_logRequests)
@@ -55,6 +56,7 @@ Future<void> main(List<String> args) async {
     'Agent dashboard server on http://${server.address.host}:${server.port}'
     '${simulate ? ' (simulated agents)' : ''}',
   );
+  if (!simulate) stdout.writeln('State is kept in ${config.dataDir}');
   if (config.webRoot == null || !Directory(config.webRoot!).existsSync()) {
     stdout.writeln('No built web app found: serving the API only.');
   }
