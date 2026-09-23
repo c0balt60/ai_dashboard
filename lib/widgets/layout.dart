@@ -18,8 +18,19 @@ abstract final class Breakpoints {
   /// Widest a page's content grows before it is centered.
   static const maxContentWidth = 1100.0;
 
+  /// Landscape phones are often wider than [wide] but shorter than this, so
+  /// they keep the phone layout.
+  static const minDesktopHeight = 480.0;
+
   static bool isWide(BuildContext context) =>
       MediaQuery.sizeOf(context).width >= wide;
+
+  /// Whether the window gets the desktop layout (side rail, sheets with a
+  /// close button) rather than the phone one (bottom bar, drag handles).
+  static bool isDesktop(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return size.width >= wide && size.height >= minDesktopHeight;
+  }
 }
 
 /// Extra horizontal space on each side that centers content of

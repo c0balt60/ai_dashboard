@@ -46,11 +46,8 @@ class ShellScaffold extends ConsumerWidget {
       );
     }
 
-    final size = MediaQuery.sizeOf(context);
-    final width = size.width;
-    // Landscape phones are often wider than the breakpoint but too short for
-    // the rail, so they keep the bottom bar.
-    if (width < Breakpoints.wide || size.height < 480) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (!Breakpoints.isDesktop(context)) {
       return Scaffold(
         body: AppBackdrop(child: shell),
         bottomNavigationBar: NavigationBar(
