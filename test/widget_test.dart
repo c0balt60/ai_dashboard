@@ -105,6 +105,24 @@ void main() {
     await _visitEverything(tester, NavigationBar);
   });
 
+  testWidgets('"Ask an agent" opens the chat of the most recent agent', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    await tester.tap(find.text('Ask an agent…'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(AgentChatScreen), findsOneWidget);
+
+    // An empty chat greets the owner with suggestions instead of bubbles.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(App)),
+    );
+    final agentId = container.read(defaultChatAgentProvider)!.id;
+    await container.read(backendProvider).clearMessages(agentId);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('Good to see you again'), findsOneWidget);
+  });
+
   testWidgets('header button toggles between light and dark theme', (
     tester,
   ) async {

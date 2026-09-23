@@ -18,11 +18,11 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 
 | Screen | Route | Contents |
 |---|---|---|
-| Dashboard | `/dashboard` (tab) | PC connection and ping, stat tiles (active agents, running tasks, test pass rate, done in 24h), 7-day completion bars, active agents strip, recent projects, activity feed |
+| Dashboard | `/dashboard` (tab) | PC connection and ping, stat tiles (active agents, running tasks, test pass rate, done in 24h), 7-day completion bars, active agents strip, recent projects, activity feed. A floating "Ask an agent" bar opens the chat of the most recently active agent (`defaultChatAgentProvider`) |
 | Projects | `/projects` (tab) | All/Active filter; projects with running agents appear first |
 | Project Dashboard | `/project/:id` (full screen) | Tabs: Overview (agents, branch, current task progress and steps), Tests (runs with failing tests), History (past tasks and activity log). A FAB opens "Run command" and an app-bar action opens "Assign agent" |
 | Agents | `/agents` (tab) | Status filter chips and agent cards |
-| Agent Screen (chat) | `/agent/:id` (full screen) | "Currently working on" banner, chat bubbles, typing indicator, quick prompts, composer; assign to folder/task, stop, clear |
+| Agent Screen (chat) | `/agent/:id` (full screen) | Centered agent title (tap to switch agent) with status pill, collapsible "Currently working on" banner, greeting with suggestion pills while empty, chat bubbles, typing indicator, quick-prompt chips, composer card (assign button, send); assign to folder/task, stop, clear |
 | Tasks | `/tasks` (tab) | Queue grouped as Active, Waiting, Backlog, Done. Cards read like "(Codex) Implement X · in project". New-task sheet and details sheet |
 | Settings | `/settings` (tab) | PC URL and connection test, simulation toggle, theme, notification toggles (not wired up yet) |
 
@@ -40,7 +40,7 @@ lib/
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
                             page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame) · glow.dart (FloatingGlow, BottomHaze)
   widgets/status/           status system (see above)
-  widgets/sheets/           assign_agent, new_task, run_command, quick_prompt bottom sheets
+  widgets/sheets/           assign_agent, new_task, run_command bottom sheets
   features/<area>/          one folder per screen area
   utils/time_format.dart    timeAgo, formatDuration, clockTime
 ```
