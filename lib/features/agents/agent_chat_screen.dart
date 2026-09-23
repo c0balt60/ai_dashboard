@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -511,8 +510,6 @@ class _Greeting extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final task = agent.currentTaskId == null
         ? null
         : ref.watch(taskProvider(agent.currentTaskId!));
@@ -531,11 +528,8 @@ class _Greeting extends ConsumerWidget {
         return ListView(
           padding: EdgeInsets.fromLTRB(side, 32, side, 16),
           children: [
-            Text(
+            PromptGreeting(
               'Good to see you again! What should ${agent.name} work on?',
-              style: theme.textTheme.headlineMedium?.copyWith(
-                color: Color.lerp(scheme.onSurfaceVariant, scheme.primary, 0.3),
-              ),
             ),
             const SizedBox(height: 24),
             for (final (emoji, prompt) in suggestions)
@@ -543,8 +537,8 @@ class _Greeting extends ConsumerWidget {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: _SuggestionPill(
-                    emoji: emoji,
+                  child: SuggestionPill.emoji(
+                    emoji,
                     label: prompt,
                     onTap: () => onSend(prompt),
                   ),
@@ -553,49 +547,6 @@ class _Greeting extends ConsumerWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _SuggestionPill extends StatelessWidget {
-  const _SuggestionPill({
-    required this.emoji,
-    required this.label,
-    required this.onTap,
-  });
-
-  final String emoji;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(28),
-      side: BorderSide(color: theme.colorScheme.outlineVariant),
-    );
-    return Material(
-      color: AppSurfaces.of(context).card,
-      shape: shape,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: shape,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ExcludeSemantics(
-                child: Text(emoji, style: const TextStyle(fontSize: 20)),
-              ),
-              const SizedBox(width: 12),
-              Flexible(child: Text(label, style: theme.textTheme.bodyLarge)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -907,17 +858,10 @@ class _ComposerState extends State<_Composer> {
     'Continue',
   ];
 
-  // On the web this reports the browser's OS, so phone browsers keep Enter as
-  // a newline like the native app.
-  static bool get _enterSends => switch (defaultTargetPlatform) {
-    TargetPlatform.windows ||
-    TargetPlatform.macOS ||
-    TargetPlatform.linux => true,
-    _ => false,
-  };
-
   final _controller = TextEditingController();
-  late final _focus = FocusNode(onKeyEvent: _onKey);
+  late final _focus = FocusNode(
+    onKeyEvent: submitOnEnter(_controller, _submit),
+  );
 
   @override
   void dispose() {
@@ -931,24 +875,6 @@ class _ComposerState extends State<_Composer> {
     if (text.isEmpty) return;
     widget.onSend(text);
     _controller.clear();
-  }
-
-  /// Claims plain Enter before the platform text input sees it, so no newline
-  /// is inserted. Shift+Enter and Enter that confirms an IME composition are
-  /// left alone.
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (!_enterSends) return KeyEventResult.ignored;
-    final key = event.logicalKey;
-    if (key != LogicalKeyboardKey.enter &&
-        key != LogicalKeyboardKey.numpadEnter) {
-      return KeyEventResult.ignored;
-    }
-    if (HardwareKeyboard.instance.isShiftPressed ||
-        _controller.value.composing.isValid) {
-      return KeyEventResult.ignored;
-    }
-    if (event is KeyDownEvent) _submit();
-    return KeyEventResult.handled;
   }
 
   @override
@@ -1045,7 +971,7 @@ class _ComposerState extends State<_Composer> {
                           ValueListenableBuilder(
                             valueListenable: _controller,
                             builder: (context, value, _) {
-                              final tooltip = _enterSends
+                              final tooltip = enterSubmitsPrompt
                                   ? 'Send (Enter)'
                                   : 'Send';
                               const icon = Icon(Icons.arrow_upward);
