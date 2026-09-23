@@ -16,9 +16,9 @@ import '../../widgets/status/status_visuals.dart';
 
 const _maxWidth = 820.0;
 
-/// Full-screen, assistant-style page for creating a task: pick the project and
-/// an optional agent as pills, then describe the work in the composer. The
-/// description becomes the task's title.
+/// Full-screen, assistant-style page for creating a task: describe the work
+/// in the composer and pick its project and optional agent from the dropdown
+/// buttons inside it. The description becomes the task's title.
 class NewTaskScreen extends ConsumerStatefulWidget {
   const NewTaskScreen({super.key, this.projectId});
 
@@ -151,21 +151,17 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
                         projectsAsync,
                         data: (_) => const SizedBox.shrink(),
                       )
-                    : _Options(
-                        projects: projects,
-                        agents: agents,
-                        project: project,
-                        agent: agent,
-                        onProject: (id) => setState(() => _projectId = id),
-                        onAgent: (id) => setState(() => _agentId = id),
-                      ),
+                    : _Intro(hasProjects: projects.isNotEmpty, agent: agent),
               ),
               _Composer(
                 controller: _description,
                 focusNode: _focus,
-                summary:
-                    '${project?.name ?? 'No project'} · '
-                    '${agent?.name ?? 'Backlog'}',
+                projects: projects,
+                agents: agents,
+                project: project,
+                agent: agent,
+                onProject: (id) => setState(() => _projectId = id),
+                onAgent: (id) => setState(() => _agentId = id),
                 templates: _templates,
                 showChips: !keyboardOpen,
                 canCreate: project != null && !_submitting,
@@ -182,79 +178,35 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
   }
 }
 
-/// Greeting and the project/agent choices, centered on wide screens.
-class _Options extends StatelessWidget {
-  const _Options({
-    required this.projects,
-    required this.agents,
-    required this.project,
-    required this.agent,
-    required this.onProject,
-    required this.onAgent,
-  });
+/// Greeting and what will happen to the task, centered on wide screens.
+class _Intro extends StatelessWidget {
+  const _Intro({required this.hasProjects, required this.agent});
 
-  final List<Project> projects;
-  final List<Agent> agents;
-  final Project? project;
+  final bool hasProjects;
   final Agent? agent;
-  final ValueChanged<String> onProject;
-  final ValueChanged<String?> onAgent;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted = theme.textTheme.bodyMedium?.copyWith(
+    final muted = theme.textTheme.bodyLarge?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-
-    Widget pills(List<Widget> children) =>
-        Wrap(spacing: 8, runSpacing: 8, children: children);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final column = math.min(constraints.maxWidth, _maxWidth);
         final side = 24 + (constraints.maxWidth - column) / 2;
         return ListView(
-          padding: EdgeInsets.fromLTRB(side, 24, side, 16),
+          padding: EdgeInsets.fromLTRB(side, 32, side, 16),
           children: [
             const PromptGreeting('What should your agents work on next?'),
-            const SizedBox(height: 24),
-            const _OptionLabel(Icons.folder_outlined, 'Project'),
-            if (projects.isEmpty)
-              Text('Add a project folder on your PC first.', style: muted)
-            else
-              pills([
-                for (final p in projects)
-                  SuggestionPill.emoji(
-                    '📁',
-                    label: p.name,
-                    selected: p.id == project?.id,
-                    onTap: () => onProject(p.id),
-                  ),
-              ]),
-            const SizedBox(height: 24),
-            const _OptionLabel(Icons.smart_toy_outlined, 'Agent'),
-            pills([
-              SuggestionPill.emoji(
-                '📥',
-                label: 'Backlog',
-                caption: 'no agent',
-                selected: agent == null,
-                onTap: () => onAgent(null),
-              ),
-              for (final a in agents)
-                SuggestionPill(
-                  leading: AgentAvatar(a, radius: 11),
-                  label: a.name,
-                  caption: a.status.visual(context).label,
-                  selected: a.id == agent?.id,
-                  onTap: () => onAgent(a.id),
-                ),
-            ]),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
-              agent == null
-                  ? 'The task waits in the backlog until you assign an agent.'
+              !hasProjects
+                  ? 'Add a project folder on your PC first.'
+                  : agent == null
+                  ? 'Describe the task below and pick its project and agent in '
+                        'the bar. Without an agent it waits in the backlog.'
                   : 'Queued for ${agent!.name}. It starts as soon as the '
                         'agent is free.',
               style: muted,
@@ -266,39 +218,95 @@ class _Options extends StatelessWidget {
   }
 }
 
-class _OptionLabel extends StatelessWidget {
-  const _OptionLabel(this.icon, this.label);
+/// Compact "icon · label ▾" button that opens a dropdown menu of options,
+/// for the pickers inside the composer card.
+class _PickerButton extends StatelessWidget {
+  const _PickerButton({
+    required this.tooltip,
+    required this.leading,
+    required this.label,
+    required this.menuChildren,
+  });
 
-  final IconData icon;
+  final String tooltip;
+  final Widget leading;
   final String label;
+  final List<Widget> menuChildren;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: theme.textTheme.titleSmall?.copyWith(color: color),
+    final scheme = theme.colorScheme;
+    return MenuAnchor(
+      menuChildren: menuChildren,
+      builder: (context, controller, _) => Tooltip(
+        message: tooltip,
+        child: TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: scheme.onSurface,
+            backgroundColor: controller.isOpen
+                ? scheme.surfaceContainerHighest
+                : scheme.surfaceContainerHigh,
+            padding: const EdgeInsets.only(left: 10, right: 6),
+            minimumSize: const Size(0, 40),
           ),
-        ],
+          onPressed: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              leading,
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge,
+                ),
+              ),
+              Icon(Icons.expand_more, size: 18, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Template chips above the description card, which shows where the task
-/// goes and the Create button.
+/// Small muted heading inside a picker menu.
+class _MenuHeader extends StatelessWidget {
+  const _MenuHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// Template chips above the description card. The card's bottom row holds
+/// the project and agent pickers and the Create button.
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.focusNode,
-    required this.summary,
+    required this.projects,
+    required this.agents,
+    required this.project,
+    required this.agent,
+    required this.onProject,
+    required this.onAgent,
     required this.templates,
     required this.showChips,
     required this.canCreate,
@@ -310,7 +318,12 @@ class _Composer extends StatelessWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
-  final String summary;
+  final List<Project> projects;
+  final List<Agent> agents;
+  final Project? project;
+  final Agent? agent;
+  final ValueChanged<String> onProject;
+  final ValueChanged<String?> onAgent;
   final List<(String, String)> templates;
   final bool showChips;
   final bool canCreate;
@@ -325,6 +338,55 @@ class _Composer extends StatelessWidget {
     final scheme = theme.colorScheme;
     final chipLabel = theme.textTheme.titleSmall?.copyWith(
       color: scheme.onSurface,
+    );
+    Widget? check(bool selected) =>
+        selected ? Icon(Icons.check, size: 18, color: scheme.primary) : null;
+
+    final projectPicker = _PickerButton(
+      tooltip: 'Choose project',
+      leading: const Icon(Icons.folder_outlined, size: 18),
+      label: project?.name ?? 'No project',
+      menuChildren: [
+        const _MenuHeader('Project'),
+        for (final p in projects)
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.folder_outlined),
+            trailingIcon: check(p.id == project?.id),
+            onPressed: () => onProject(p.id),
+            child: Text(p.name),
+          ),
+      ],
+    );
+
+    final agentPicker = _PickerButton(
+      tooltip: 'Choose agent',
+      leading: agent == null
+          ? const Icon(Icons.inbox_outlined, size: 18)
+          : Icon(agent!.type.icon, size: 18),
+      label: agent?.name ?? 'Backlog',
+      menuChildren: [
+        const _MenuHeader('Agent'),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.inbox_outlined),
+          trailingIcon: check(agent == null),
+          onPressed: () => onAgent(null),
+          child: const Text('Backlog · no agent'),
+        ),
+        for (final a in agents)
+          MenuItemButton(
+            leadingIcon: AgentAvatar(a, radius: 10),
+            trailingIcon:
+                check(a.id == agent?.id) ??
+                Text(
+                  a.status.visual(context).label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: a.status.visual(context).color,
+                  ),
+                ),
+            onPressed: () => onAgent(a.id),
+            child: Text(a.name),
+          ),
+      ],
     );
 
     return SafeArea(
@@ -393,43 +455,33 @@ class _Composer extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 12),
-                              child: Text(
-                                summary,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
+                            child: Row(
+                              children: [
+                                Flexible(child: projectPicker),
+                                const SizedBox(width: 6),
+                                Flexible(child: agentPicker),
+                              ],
                             ),
                           ),
                           const SizedBox(width: 8),
                           ValueListenableBuilder(
                             valueListenable: controller,
-                            builder: (context, value, _) => Tooltip(
-                              message: enterSubmitsPrompt
+                            builder: (context, value, _) => IconButton.filled(
+                              tooltip: enterSubmitsPrompt
                                   ? 'Create task (Enter)'
                                   : 'Create task',
-                              child: FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size(48, 48),
-                                ),
-                                onPressed:
-                                    canCreate && value.text.trim().isNotEmpty
-                                    ? onCreate
-                                    : null,
-                                icon: submitting
-                                    ? const SizedBox.square(
-                                        dimension: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.arrow_upward),
-                                label: const Text('Create'),
-                              ),
+                              onPressed:
+                                  canCreate && value.text.trim().isNotEmpty
+                                  ? onCreate
+                                  : null,
+                              icon: submitting
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.arrow_upward),
                             ),
                           ),
                         ],
