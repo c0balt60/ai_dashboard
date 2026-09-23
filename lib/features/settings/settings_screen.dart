@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/app_version.dart';
 import '../../providers/backend_providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../widgets/common.dart';
@@ -19,7 +20,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static const _appName = 'AI Dashboard';
-  static const _version = '1.0.0';
 
   late final _urlController = TextEditingController(
     text: ref.read(settingsProvider).serverUrl,
@@ -234,7 +234,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: ListTile(
           leading: Icon(Icons.smart_toy_outlined),
           title: Text(_appName),
-          subtitle: Text('Version $_version'),
+          subtitle: Text('Version $appVersion (build $appBuildNumber)'),
         ),
       ),
     );

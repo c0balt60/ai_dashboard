@@ -35,7 +35,7 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 ```
 lib/
   main.dart                 ProviderScope(child: App())
-  app/                      app.dart (MaterialApp.router) · router.dart (go_router + AppRoutes) · shell_scaffold.dart (bottom NavigationBar, side rail from 840dp) · theme.dart (M3 light/dark + StatusColors and AppSurfaces ThemeExtensions)
+  app/                      app.dart (MaterialApp.router) · app_version.dart (version shown in About) · router.dart (go_router + AppRoutes) · shell_scaffold.dart (bottom NavigationBar, side rail from 840dp) · theme.dart (M3 light/dark + StatusColors and AppSurfaces ThemeExtensions)
   data/models/              immutable models with handwritten copyWith; models.dart re-exports them all
   data/backend/             agent_backend.dart (abstract contract) · mock_backend.dart · mock_seed.dart
   providers/                backend_providers.dart (streams + derived views) · settings_provider.dart
@@ -45,6 +45,7 @@ lib/
   widgets/sheets/           app_sheet (showAppSheet, SheetHeader) · assign_agent, run_command, todo_list, todo_item bottom sheets
   features/<area>/          one folder per screen area
   utils/time_format.dart    timeAgo, formatDuration, clockTime
+tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart together
 ```
 
 ### Data flow
@@ -90,6 +91,7 @@ lib/
 
 - **Comments:** only file- and class-level doc comments, plus comments on genuinely tricky logic. No section-divider comments and no per-field or obvious comments.
 - **Commits:** split work into several logical commits (dependencies, then data layer, then shared widgets, then each feature, then tests). Never dump everything into one commit, and don't commit straight to `main`; use a feature branch.
+- **Versioning:** every change set bumps the version, which shows in Settings > About. Pick `major`, `minor`, `patch` or `build` as described in `VERSIONING.md`, run `tool/bump_version.dart`, and commit the bump on its own as the last commit (`Bump version to X.Y.Z`). Never edit the version by hand.
 - Match the surrounding code style. Run `dart format` before committing.
 - **Secrets:** never commit API keys or tokens. When a real backend arrives, keep secrets in a gitignored `.env` file, `--dart-define`, or platform secure storage.
 
@@ -101,6 +103,7 @@ Flutter is **not on PATH** on the owner's machine, so use full paths:
 C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe format lib test
 C:\Users\elmtc\flutter\bin\flutter.bat analyze          # must report "No issues found!"
 C:\Users\elmtc\flutter\bin\flutter.bat test
+C:\Users\elmtc\flutter\bin\cache\dart-sdk\bin\dart.exe tool/bump_version.dart patch   # or major | minor | build, see VERSIONING.md
 C:\Users\elmtc\flutter\bin\flutter.bat run -d edge      # web testing (Chrome isn't installed; Edge is)
 C:\Users\elmtc\flutter\bin\flutter.bat run -d web-server --web-hostname 0.0.0.0 --web-port 8080   # open from a phone on the LAN
 ```
@@ -109,6 +112,7 @@ C:\Users\elmtc\flutter\bin\flutter.bat run -d web-server --web-hostname 0.0.0.0 
 
 - `test/widget_test.dart` is the smoke test. It overrides `backendProvider` with `MockAgentBackend(simulate: false, latency: Duration.zero)`, visits every tab and pushes the agent-chat and project routes, once on a phone view (1080×2340 at 3x) and once on a desktop view (1440×900 at 1x, via the side rail). It also checks the header theme toggle.
 - `test/mock_backend_test.dart` holds unit tests for mock behaviour.
+- `test/version_test.dart` checks that `lib/app/app_version.dart` matches the `pubspec.yaml` version.
 - Status dots animate forever, so **never use `pumpAndSettle`**. Use `pump(const Duration(...))` instead.
 - Keep the suite small and meaningful, and run it once per change rather than repeatedly.
 
