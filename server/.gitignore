@@ -1,0 +1,4 @@
+# Holds the auth token and local paths.
+config.json
+.dart_tool/
+*.exe

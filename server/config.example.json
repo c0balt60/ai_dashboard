@@ -1,0 +1,20 @@
+{
+  "token": "CHANGE-ME-to-a-long-random-string",
+  "host": "127.0.0.1",
+  "port": 8787,
+  "webRoot": "../build/web",
+  "corsOrigins": [],
+  "commandTimeoutSeconds": 120,
+  "shell": [],
+  "projects": [
+    {
+      "name": "ai_dashboard",
+      "path": "C:/Users/you/Desktop/Programming/flutter/ai_dashboard",
+      "testCommand": "C:/Users/you/flutter/bin/flutter.bat test"
+    }
+  ],
+  "agents": [
+    { "id": "claude", "name": "Claude", "type": "claudeCode", "projectId": "ai_dashboard" },
+    { "id": "codex", "name": "Codex", "type": "codex" }
+  ]
+}
