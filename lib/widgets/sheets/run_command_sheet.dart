@@ -8,6 +8,7 @@ Future<void> showRunCommandSheet(BuildContext context, String projectId) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useRootNavigator: true,
     useSafeArea: true,
     builder: (_) => _RunCommandSheet(projectId),
   );
@@ -81,87 +82,101 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final project = ref.watch(projectProvider(widget.projectId));
     const mono = TextStyle(fontFamily: 'monospace');
+    // The theme paints unselected chips in the card color, which is also the
+    // sheet color, so these chips need their own fill to stay visible.
+    final chipColor = WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.disabled)
+          ? scheme.onSurface.withValues(alpha: 0.06)
+          : scheme.surfaceContainerHigh,
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Run command', style: theme.textTheme.titleLarge),
-            if (project != null)
-              Text(
-                project.path,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              autocorrect: false,
-              enableSuggestions: false,
-              textInputAction: TextInputAction.go,
-              style: mono,
-              decoration: const InputDecoration(
-                prefixText: '\$ ',
-                prefixStyle: mono,
-                hintText: 'git status',
-              ),
-              onSubmitted: (_) => _run(),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (final command in _quickCommands)
-                  ActionChip(
-                    avatar: const Icon(Icons.bolt, size: 16),
-                    label: Text(command, style: mono),
-                    onPressed: _running ? null : () => _run(command),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Run command', style: theme.textTheme.titleLarge),
+              if (project != null)
+                Text(
+                  project.path,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ValueListenableBuilder(
-              valueListenable: _controller,
-              builder: (context, value, _) => FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
                 ),
-                onPressed: _running || value.text.trim().isEmpty ? null : _run,
-                icon: _running
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.play_arrow),
-                label: Text(_running ? 'Running…' : 'Run'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                textInputAction: TextInputAction.go,
+                style: mono,
+                decoration: const InputDecoration(
+                  prefixText: '\$ ',
+                  prefixStyle: mono,
+                  hintText: 'git status',
+                ),
+                onSubmitted: (_) => _run(),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Text('Output', style: theme.textTheme.titleSmall),
-                const Spacer(),
-                TextButton(
-                  onPressed: _runs.isEmpty || _running
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final command in _quickCommands)
+                    ActionChip(
+                      color: chipColor,
+                      avatar: const Icon(Icons.bolt, size: 16),
+                      label: Text(command, style: mono),
+                      onPressed: _running ? null : () => _run(command),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ValueListenableBuilder(
+                valueListenable: _controller,
+                builder: (context, value, _) => FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: _running || value.text.trim().isEmpty
                       ? null
-                      : () => setState(_runs.clear),
-                  child: const Text('Clear'),
+                      : _run,
+                  icon: _running
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.play_arrow),
+                  label: Text(_running ? 'Running…' : 'Run'),
                 ),
-              ],
-            ),
-            _OutputBox(runs: _runs, controller: _outputScroll),
-          ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text('Output', style: theme.textTheme.titleSmall),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _runs.isEmpty || _running
+                        ? null
+                        : () => setState(_runs.clear),
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+              _OutputBox(runs: _runs, controller: _outputScroll),
+            ],
+          ),
         ),
       ),
     );
@@ -196,7 +211,7 @@ class _OutputBox extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: _background,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Scrollbar(
         controller: controller,
