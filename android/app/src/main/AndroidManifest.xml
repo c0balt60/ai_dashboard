@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Release builds need this to reach the PC server. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="ai_dashboard"
+        android:label="Agent Dashboard"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
