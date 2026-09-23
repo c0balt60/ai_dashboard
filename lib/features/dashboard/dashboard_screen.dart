@@ -14,7 +14,6 @@ import '../../widgets/page.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/prompt_bar.dart';
 import '../../widgets/sheets/new_task_sheet.dart';
-import '../../widgets/sheets/quick_prompt_sheet.dart';
 import '../../widgets/status/status_visuals.dart';
 
 final _pingProvider = FutureProvider.autoDispose<Duration>(
@@ -551,14 +550,26 @@ class _ActivityRow extends StatelessWidget {
   }
 }
 
-/// Floating "Ask an agent…" bar that opens [showQuickPromptSheet].
-class _PromptBar extends StatelessWidget {
+/// Floating "Ask an agent…" bar that opens a full chat with
+/// [defaultChatAgentProvider]'s agent.
+class _PromptBar extends ConsumerWidget {
   const _PromptBar();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    void open() => showQuickPromptSheet(context);
+    void open() {
+      final agent = ref.read(defaultChatAgentProvider);
+      if (agent == null) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('No agents are running on your PC.')),
+          );
+        return;
+      }
+      context.push(AppRoutes.agent(agent.id));
+    }
 
     return Semantics(
       button: true,

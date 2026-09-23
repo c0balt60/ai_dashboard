@@ -35,6 +35,17 @@ final agentProvider = Provider.family<Agent?, String>((ref, id) {
   return agents.where((a) => a.id == id).firstOrNull;
 });
 
+/// The agent a new chat opens with: the most recently active one, so "Ask an
+/// agent" picks up where the owner last left off.
+final defaultChatAgentProvider = Provider<Agent?>((ref) {
+  final agents = ref.watch(agentsProvider).value ?? const [];
+  return agents.fold<Agent?>(
+    null,
+    (best, a) =>
+        best == null || a.lastActive.isAfter(best.lastActive) ? a : best,
+  );
+});
+
 final projectProvider = Provider.family<Project?, String>((ref, id) {
   final projects = ref.watch(projectsProvider).value ?? const [];
   return projects.where((p) => p.id == id).firstOrNull;
