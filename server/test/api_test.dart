@@ -72,6 +72,21 @@ void main() {
     final tasks = await backend.watchTasks().first;
     expect(tasks.firstWhere((t) => t.id == task.id).state, TaskState.completed);
 
+    final chat = await http.post(
+      base.resolve(ApiPaths.chats),
+      headers: auth(),
+      body: jsonEncode({'agentId': 'a5', 'projectId': 'p1'}),
+    );
+    expect(chat.statusCode, 200);
+    final chatId = AgentChat.fromJson(jsonDecode(chat.body) as Json).id;
+    final prompted = await http.post(
+      base.resolve(ApiPaths.prompt(chatId)),
+      headers: auth(),
+      body: jsonEncode({'text': 'hi'}),
+    );
+    expect(prompted.statusCode, 200);
+    expect(await backend.watchMessages(chatId).first, isNotEmpty);
+
     final bad = await http.post(
       base.resolve(ApiPaths.tasks),
       headers: auth(),

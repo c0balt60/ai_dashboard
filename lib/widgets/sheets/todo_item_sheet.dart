@@ -95,8 +95,9 @@ class _TodoItemSheetState extends ConsumerState<_TodoItemSheet> {
     if (mounted) navigator.pop();
   }
 
-  /// Saves the item, then opens the new-task page prefilled from it. The
-  /// to-do stays open so the user can tick it off once the agent is done.
+  /// Saves the item, then opens the new-task page prefilled with its title
+  /// and notes. The task stays linked to the to-do, which is ticked off when
+  /// the agent completes it.
   Future<void> _sendToAgent() async {
     if (!_canSave) return;
     final navigator = Navigator.of(context);
@@ -108,8 +109,11 @@ class _TodoItemSheetState extends ConsumerState<_TodoItemSheet> {
     await router.push(
       AppRoutes.newTask(
         title: item.title,
+        notes: item.note.isEmpty ? null : item.note,
         projectId: item.projectIds.firstOrNull,
         agentId: item.agentIds.firstOrNull,
+        todoListId: widget.listId,
+        todoItemId: item.id,
       ),
     );
   }

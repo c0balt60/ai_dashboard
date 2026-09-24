@@ -42,8 +42,46 @@ final tasksProvider = StreamProvider<List<AgentTask>>(
   (ref) => ref.watch(backendProvider).watchTasks(),
 );
 
+/// Every agent's chats, most recently active first.
+final chatsProvider = StreamProvider<List<AgentChat>>(
+  (ref) => ref
+      .watch(backendProvider)
+      .watchChats()
+      .map(
+        (chats) =>
+            [...chats]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+      ),
+);
+
+final chatProvider = Provider.family<AgentChat?, String>((ref, id) {
+  final chats = ref.watch(chatsProvider).value ?? const [];
+  return chats.where((c) => c.id == id).firstOrNull;
+});
+
+/// One agent's chats, most recently active first.
+final agentChatsProvider = Provider.family<List<AgentChat>, String>((
+  ref,
+  agentId,
+) {
+  final chats = ref.watch(chatsProvider).value ?? const [];
+  return chats.where((c) => c.agentId == agentId).toList();
+});
+
+/// The agent's most recently active chat, limited to [projectId] when given.
+/// Null while chats load or when the agent has no chat in that project yet.
+final latestChatProvider =
+    Provider.family<AgentChat?, ({String agentId, String? projectId})>((
+      ref,
+      key,
+    ) {
+      final chats = ref.watch(agentChatsProvider(key.agentId));
+      return chats
+          .where((c) => key.projectId == null || c.projectId == key.projectId)
+          .firstOrNull;
+    });
+
 final messagesProvider = StreamProvider.family<List<ChatMessage>, String>(
-  (ref, agentId) => ref.watch(backendProvider).watchMessages(agentId),
+  (ref, chatId) => ref.watch(backendProvider).watchMessages(chatId),
 );
 
 final agentProvider = Provider.family<Agent?, String>((ref, id) {
@@ -77,7 +115,7 @@ final agentsForProjectProvider = Provider.family<List<Agent>, String>((
   projectId,
 ) {
   final agents = ref.watch(agentsProvider).value ?? const [];
-  return agents.where((a) => a.projectId == projectId).toList();
+  return agents.where((a) => a.belongsTo(projectId)).toList();
 });
 
 /// Tasks for one project, most recently updated first.
@@ -119,6 +157,18 @@ final todoListsProvider = StreamProvider<List<TodoList>>(
             [...lists]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
       ),
 );
+
+/// The most recent agent task created from the to-do item with this id.
+final taskForTodoProvider = Provider.family<AgentTask?, String>((ref, itemId) {
+  final tasks = ref.watch(tasksProvider).value ?? const [];
+  return tasks
+      .where((t) => t.todo?.itemId == itemId)
+      .fold<AgentTask?>(
+        null,
+        (best, t) =>
+            best == null || t.createdAt.isAfter(best.createdAt) ? t : best,
+      );
+});
 
 final todoListProvider = Provider.family<TodoList?, String>((ref, id) {
   final lists = ref.watch(todoListsProvider).value ?? const [];

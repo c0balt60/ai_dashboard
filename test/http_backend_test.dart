@@ -57,6 +57,18 @@ void main() {
         .firstWhere((tasks) => tasks.any((t) => t.id == task.id))
         .timeout(const Duration(seconds: 5));
 
+    final chat = await backend.createChat('a5', projectId: 'p1');
+    await backend.sendPrompt(chat.id, 'Hello');
+    await backend
+        .watchChats()
+        .firstWhere((chats) => chats.any((c) => c.title == 'Hello'))
+        .timeout(const Duration(seconds: 5));
+    await backend.setAgentProjects('a5', ['p1', 'p2']);
+    final aider = (await mock.watchAgents().first).firstWhere(
+      (a) => a.id == 'a5',
+    );
+    expect(aider.projectIds, ['p1', 'p2']);
+
     final list = await backend.createTodoList('Release');
     final item = await backend.addTodoItem(
       list.id,

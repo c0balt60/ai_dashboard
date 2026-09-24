@@ -8,8 +8,10 @@ import '../status/status_badge.dart';
 import '../status/status_visuals.dart';
 import 'app_sheet.dart';
 
-/// Lets the user point an agent at a project folder and optionally a task.
-/// Any of [agentId], [projectId] and [taskId] can be preselected.
+/// Lets the user pick the projects an agent belongs to, and the one it works
+/// in right now: its folder and optionally a task. Any of [agentId],
+/// [projectId] and [taskId] can be preselected. Only changing the projects
+/// leaves the agent running; changing where it works restarts it there.
 Future<void> showAssignAgentSheet(
   BuildContext context, {
   String? agentId,
@@ -46,6 +48,7 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
   String? _agentId;
   String? _projectId;
   String? _taskId;
+  var _memberIds = <String>{};
   bool _submitting = false;
 
   @override
@@ -56,7 +59,19 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
     final agent = _agentId == null ? null : ref.read(agentProvider(_agentId!));
     final task = _taskId == null ? null : ref.read(taskProvider(_taskId!));
     _projectId = widget.projectId ?? task?.projectId ?? agent?.projectId;
+    _memberIds = {...?agent?.projectIds, ?_projectId};
+    _resetFolder(agent);
+  }
 
+  @override
+  void dispose() {
+    _folder.dispose();
+    super.dispose();
+  }
+
+  /// The agent's own folder when it already works in the chosen project,
+  /// else the project's.
+  void _resetFolder(Agent? agent) {
     final project = _projectId == null
         ? null
         : ref.read(projectProvider(_projectId!));
@@ -66,38 +81,82 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
     _folder.text = workingDir ?? project?.path ?? '';
   }
 
-  @override
-  void dispose() {
-    _folder.dispose();
-    super.dispose();
+  void _selectAgent(String? id) {
+    setState(() {
+      _agentId = id;
+      final agent = id == null ? null : ref.read(agentProvider(id));
+      _memberIds = {...?agent?.projectIds, ?_projectId};
+      _resetFolder(agent);
+    });
   }
 
   void _selectProject(Project project) {
     setState(() {
       _projectId = project.id;
+      _memberIds.add(project.id);
       _folder.text = project.path;
       final task = _taskId == null ? null : ref.read(taskProvider(_taskId!));
       if (task?.projectId != project.id) _taskId = null;
     });
   }
 
-  Future<void> _assign(Agent agent, Project project) async {
+  void _toggleMember(String projectId, bool member) {
+    setState(() {
+      if (member) {
+        _memberIds.add(projectId);
+        return;
+      }
+      _memberIds.remove(projectId);
+      if (_projectId == projectId) {
+        _projectId = _memberIds.firstOrNull;
+        _taskId = null;
+        _resetFolder(
+          _agentId == null ? null : ref.read(agentProvider(_agentId!)),
+        );
+      }
+    });
+  }
+
+  Future<void> _save(Agent agent, Project? project) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final backend = ref.read(backendProvider);
+    final folder = _folder.text.trim();
     setState(() => _submitting = true);
-    await ref
-        .read(backendProvider)
-        .assignAgent(
-          agent.id,
-          projectId: project.id,
-          workingDir: _folder.text.trim(),
-          taskId: _taskId,
-        );
+    if (!_sameMembers(agent)) {
+      await backend.setAgentProjects(agent.id, [..._memberIds]);
+    }
+    final target =
+        project != null &&
+            (project.id != agent.projectId ||
+                folder != agent.workingDir ||
+                _taskId != null)
+        ? project
+        : null;
+    if (target != null) {
+      await backend.assignAgent(
+        agent.id,
+        projectId: target.id,
+        workingDir: folder,
+        taskId: _taskId,
+      );
+    }
     if (mounted) navigator.pop();
     messenger.showSnackBar(
-      SnackBar(content: Text('${agent.name} assigned to ${project.name}')),
+      SnackBar(
+        content: Text(
+          target != null
+              ? '${agent.name} assigned to ${target.name}'
+              : '${agent.name} is in ${_memberIds.length} '
+                    'project${_memberIds.length == 1 ? '' : 's'}',
+        ),
+      ),
     );
   }
+
+  bool _sameMembers(Agent agent) =>
+      _memberIds.length == agent.projectIds.length &&
+      _memberIds.containsAll(agent.projectIds);
 
   /// Free agents first, busy ones last, so the likely pick is on top.
   static int _rank(AgentStatus status) => switch (status) {
@@ -129,13 +188,25 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
     final taskValue = taskOptions.any((t) => t.id == _taskId)
         ? _taskId!
         : _noTask;
+    final members = [
+      for (final p in projects)
+        if (_memberIds.contains(p.id)) p,
+    ];
     final currentTaskId = agent?.currentTaskId;
-    final pausesCurrentTask = currentTaskId != null && currentTaskId != _taskId;
+    final moves =
+        project != null &&
+        (project.id != agent?.projectId ||
+            _folder.text.trim() != agent?.workingDir ||
+            _taskId != null);
+    final pausesCurrentTask =
+        moves && currentTaskId != null && currentTaskId != _taskId;
     final canAssign =
         agent != null &&
-        project != null &&
-        _folder.text.trim().isNotEmpty &&
+        (project == null || _folder.text.trim().isNotEmpty) &&
         !_submitting;
+    final label = theme.textTheme.labelLarge?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -158,7 +229,7 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
                 _AgentPicker(
                   agents: agents,
                   selectedId: _agentId,
-                  onChanged: (id) => setState(() => _agentId = id),
+                  onChanged: _selectAgent,
                 )
               else if (agent != null)
                 ListTile(
@@ -187,16 +258,41 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Text('Projects', style: label),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final p in projects)
+                          FilterChip(
+                            avatar: const Icon(Icons.folder_outlined, size: 18),
+                            label: Text(
+                              p.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            selected: _memberIds.contains(p.id),
+                            onSelected: (on) => _toggleMember(p.id, on),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
+                      // Rebuilt when the choices change so the value always
+                      // matches an item.
+                      key: ValueKey('${_memberIds.join(',')}|$_projectId'),
                       initialValue: project?.id,
                       isExpanded: true,
                       decoration: const InputDecoration(
-                        labelText: 'Project',
+                        labelText: 'Work in now',
                         prefixIcon: Icon(Icons.folder),
                       ),
-                      hint: const Text('Choose a project'),
+                      hint: Text(
+                        members.isEmpty
+                            ? 'Pick a project above first'
+                            : 'Keep its current folder',
+                      ),
                       items: [
-                        for (final p in projects)
+                        for (final p in members)
                           DropdownMenuItem(
                             value: p.id,
                             child: Text(
@@ -263,16 +359,14 @@ class _AssignAgentSheetState extends ConsumerState<_AssignAgentSheet> {
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
-                      onPressed: canAssign
-                          ? () => _assign(agent, project)
-                          : null,
+                      onPressed: canAssign ? () => _save(agent, project) : null,
                       icon: _submitting
                           ? const SizedBox.square(
                               dimension: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.check),
-                      label: const Text('Assign'),
+                      label: Text(moves ? 'Assign' : 'Save'),
                     ),
                   ],
                 ),

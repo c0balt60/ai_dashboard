@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/models/models.dart';
 import '../features/agents/agent_chat_screen.dart';
 import '../features/agents/agents_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
@@ -26,14 +27,33 @@ abstract final class AppRoutes {
   static const settings = '/settings';
 
   static String project(String id) => '/project/$id';
-  static String agent(String id) => '/agent/$id';
-  static String newTask({String? projectId, String? title, String? agentId}) {
-    final query = {'project': ?projectId, 'title': ?title, 'agent': ?agentId};
-    return Uri(
-      path: '/new-task',
-      queryParameters: query.isEmpty ? null : query,
-    ).toString();
-  }
+  /// An agent's chat: [chatId] if given, else its latest chat in [projectId],
+  /// else its latest chat overall.
+  static String agent(String id, {String? chatId, String? projectId}) =>
+      _withQuery('/agent/$id', {'chat': ?chatId, 'project': ?projectId});
+
+  /// Prefilled from a to-do: [todoListId] and [todoItemId] link the new task
+  /// to it so finishing the task ticks the to-do off.
+  static String newTask({
+    String? projectId,
+    String? title,
+    String? notes,
+    String? agentId,
+    String? todoListId,
+    String? todoItemId,
+  }) => _withQuery('/new-task', {
+    'project': ?projectId,
+    'title': ?title,
+    'notes': ?notes,
+    'agent': ?agentId,
+    'list': ?todoListId,
+    'item': ?todoItemId,
+  });
+
+  static String _withQuery(String path, Map<String, String> query) => Uri(
+    path: path,
+    queryParameters: query.isEmpty ? null : query,
+  ).toString();
 
   static String todoList(String id) => '/list/$id';
 }
@@ -59,16 +79,27 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/new-task',
-        builder: (context, state) => NewTaskScreen(
-          projectId: state.uri.queryParameters['project'],
-          title: state.uri.queryParameters['title'],
-          agentId: state.uri.queryParameters['agent'],
-        ),
+        builder: (context, state) {
+          final query = state.uri.queryParameters;
+          final (list, item) = (query['list'], query['item']);
+          return NewTaskScreen(
+            projectId: query['project'],
+            title: query['title'],
+            notes: query['notes'],
+            agentId: query['agent'],
+            todo: list != null && item != null
+                ? TodoLink(listId: list, itemId: item)
+                : null,
+          );
+        },
       ),
       GoRoute(
         path: '/agent/:id',
-        builder: (context, state) =>
-            AgentChatScreen(agentId: state.pathParameters['id']!),
+        builder: (context, state) => AgentChatScreen(
+          agentId: state.pathParameters['id']!,
+          chatId: state.uri.queryParameters['chat'],
+          projectId: state.uri.queryParameters['project'],
+        ),
       ),
       GoRoute(
         path: '/list/:id',

@@ -1,4 +1,5 @@
 export 'agent.dart';
+export 'agent_chat.dart';
 export 'agent_task.dart';
 export 'chat_message.dart';
 export 'enums.dart';

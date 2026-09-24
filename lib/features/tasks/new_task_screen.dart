@@ -17,16 +17,26 @@ import '../../widgets/status/status_visuals.dart';
 const _maxWidth = 820.0;
 
 /// Full-screen, assistant-style page for creating a task: describe the work
-/// in the composer and pick its project and optional agent from the dropdown
-/// buttons inside it. The description becomes the task's title. It can be
-/// prefilled, e.g. when handing off one of the user's to-dos.
+/// in the composer, add optional notes, and pick its project and optional
+/// agent from the dropdown buttons inside it. The description becomes the
+/// task's title; the agent gets both. It can be prefilled, e.g. when handing
+/// off one of the user's to-dos, which then stays linked to the task.
 class NewTaskScreen extends ConsumerStatefulWidget {
-  const NewTaskScreen({super.key, this.projectId, this.title, this.agentId});
+  const NewTaskScreen({
+    super.key,
+    this.projectId,
+    this.title,
+    this.notes,
+    this.agentId,
+    this.todo,
+  });
 
   /// Preselected project; defaults to the most recently active one.
   final String? projectId;
   final String? title;
+  final String? notes;
   final String? agentId;
+  final TodoLink? todo;
 
   @override
   ConsumerState<NewTaskScreen> createState() => _NewTaskScreenState();
@@ -42,6 +52,7 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
   ];
 
   late final _description = TextEditingController(text: widget.title);
+  late final _notes = TextEditingController(text: widget.notes);
   late final _focus = FocusNode(
     onKeyEvent: submitOnEnter(_description, _create),
   );
@@ -52,6 +63,7 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
   @override
   void dispose() {
     _description.dispose();
+    _notes.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -95,7 +107,13 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
     setState(() => _submitting = true);
     await ref
         .read(backendProvider)
-        .createTask(title, project.id, agentId: agent?.id);
+        .createTask(
+          title,
+          project.id,
+          agentId: agent?.id,
+          description: _notes.text.trim(),
+          todo: widget.todo,
+        );
     if (!mounted) return;
     // Opened from a deep link there is nothing to pop back to.
     context.canPop() ? context.pop() : context.go(AppRoutes.tasks);
@@ -154,10 +172,15 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
                         projectsAsync,
                         data: (_) => const SizedBox.shrink(),
                       )
-                    : _Intro(hasProjects: projects.isNotEmpty, agent: agent),
+                    : _Intro(
+                        hasProjects: projects.isNotEmpty,
+                        agent: agent,
+                        fromTodo: widget.todo != null,
+                      ),
               ),
               _Composer(
                 controller: _description,
+                notesController: _notes,
                 focusNode: _focus,
                 projects: projects,
                 agents: agents,
@@ -183,10 +206,15 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
 
 /// Greeting and what will happen to the task, centered on wide screens.
 class _Intro extends StatelessWidget {
-  const _Intro({required this.hasProjects, required this.agent});
+  const _Intro({
+    required this.hasProjects,
+    required this.agent,
+    required this.fromTodo,
+  });
 
   final bool hasProjects;
   final Agent? agent;
+  final bool fromTodo;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +242,14 @@ class _Intro extends StatelessWidget {
                         'agent is free.',
               style: muted,
             ),
+            if (fromTodo && hasProjects) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Made from one of your to-dos. The agent gets its title and '
+                'notes, and the to-do is ticked off when the task completes.',
+                style: muted,
+              ),
+            ],
           ],
         );
       },
@@ -298,11 +334,13 @@ class _MenuHeader extends StatelessWidget {
   }
 }
 
-/// Template chips above the description card. The card's bottom row holds
-/// the project and agent pickers and the Create button.
+/// Template chips above the description card. The card holds the
+/// description, a smaller notes field, and a bottom row with the project and
+/// agent pickers and the Create button.
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
+    required this.notesController,
     required this.focusNode,
     required this.projects,
     required this.agents,
@@ -320,6 +358,7 @@ class _Composer extends StatelessWidget {
   });
 
   final TextEditingController controller;
+  final TextEditingController notesController;
   final FocusNode focusNode;
   final List<Project> projects;
   final List<Agent> agents;
@@ -453,6 +492,36 @@ class _Composer extends StatelessWidget {
                           focusedBorder: InputBorder.none,
                           filled: false,
                           contentPadding: EdgeInsets.fromLTRB(12, 12, 12, 8),
+                        ),
+                      ),
+                      TextField(
+                        controller: notesController,
+                        minLines: 1,
+                        maxLines: 4,
+                        keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: theme.textTheme.bodyMedium,
+                        decoration: InputDecoration(
+                          hintText: 'Notes for the agent (optional)',
+                          prefixIcon: Icon(
+                            Icons.notes,
+                            size: 18,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          contentPadding: const EdgeInsets.fromLTRB(
+                            0,
+                            8,
+                            12,
+                            8,
+                          ),
                         ),
                       ),
                       Row(

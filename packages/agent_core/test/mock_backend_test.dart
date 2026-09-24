@@ -17,6 +17,65 @@ void main() {
     expect(messages.map((m) => m.role), [MessageRole.user, MessageRole.agent]);
     expect((await aider()).status, AgentStatus.waiting);
   });
+
+  test('project chats keep their own history and move the agent', () async {
+    final backend = MockAgentBackend(simulate: false, latency: Duration.zero);
+    addTearDown(backend.dispose);
+
+    final chat = await backend.createChat('a5', projectId: 'p3');
+    await backend.sendPrompt(chat.id, 'Explain the build setup');
+
+    final chats = await backend.watchChats().first;
+    expect(
+      chats.singleWhere((c) => c.id == chat.id).title,
+      'Explain the build setup',
+      reason: 'the first prompt names an untitled chat',
+    );
+    expect(await backend.watchMessages(chat.id).first, hasLength(2));
+    expect(await backend.watchMessages('a5').first, isEmpty);
+    final aider = (await backend.watchAgents().first).firstWhere(
+      (a) => a.id == 'a5',
+    );
+    expect((aider.projectId, aider.projectIds), ('p3', ['p3']));
+
+    await backend.setAgentProjects('a5', ['p1', 'p2']);
+    final moved = (await backend.watchAgents().first).firstWhere(
+      (a) => a.id == 'a5',
+    );
+    expect((moved.projectId, moved.projectIds), (null, ['p1', 'p2']));
+
+    await backend.deleteChat('a5');
+    await backend.deleteChat(chat.id);
+    final left = await backend.watchChats().first;
+    expect(left.where((c) => c.agentId == 'a5').map((c) => c.id), ['a5']);
+  });
+
+  test('a task from a to-do carries its notes and ticks the to-do off', () async {
+    final backend = MockAgentBackend(simulate: false, latency: Duration.zero);
+    addTearDown(backend.dispose);
+
+    Future<TodoItem> item() async => (await backend.watchTodoLists().first)
+        .firstWhere((l) => l.id == 'l1')
+        .items
+        .firstWhere((i) => i.id == 'i4');
+
+    final task = await backend.createTask(
+      'Write release notes',
+      'p1',
+      agentId: 'a5',
+      description: 'Cover chats per project.',
+      todo: const TodoLink(listId: 'l1', itemId: 'i4'),
+    );
+    expect(task.brief, contains('Cover chats per project.'));
+
+    await backend.updateTaskState(task.id, TaskState.completed);
+    expect((await item()).done, isTrue);
+    expect((await item()).completedAt, isNotNull);
+
+    await backend.updateTaskState(task.id, TaskState.waiting);
+    expect((await item()).done, isFalse);
+  });
+
   test('to-do items keep their tags and dates, and ticking them off stamps '
       'completedAt', () async {
     final backend = MockAgentBackend(simulate: false, latency: Duration.zero);

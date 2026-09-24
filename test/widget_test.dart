@@ -161,7 +161,10 @@ void main() {
       tester.element(find.byType(App)),
     );
     final agentId = container.read(defaultChatAgentProvider)!.id;
-    await container.read(backendProvider).clearMessages(agentId);
+    final chat = container.read(
+      latestChatProvider((agentId: agentId, projectId: null)),
+    )!;
+    await container.read(backendProvider).clearMessages(chat.id);
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('Good to see you again'), findsOneWidget);
   });
@@ -193,7 +196,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.widgetWithText(MenuItemButton, 'Codex'));
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.enterText(find.byType(TextField), 'Add rate limiting');
+    await tester.enterText(find.byType(TextField).first, 'Add rate limiting');
+    await tester.enterText(find.byType(TextField).last, 'Use a token bucket');
     await tester.pump();
     await tester.tap(find.byTooltip('Create task'));
     await tester.pump(const Duration(milliseconds: 500));
@@ -207,7 +211,57 @@ void main() {
         .value!
         .singleWhere((t) => t.title == 'Add rate limiting');
     expect(task.state, TaskState.waiting);
+    expect(task.description, 'Use a token bucket');
     expect(container.read(agentProvider(task.agentId!))!.name, 'Codex');
+  });
+
+  testWidgets('the chat title lists project chats and switches between them', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .push(AppRoutes.agent('a1'));
+    await _pumpChat(tester);
+    expect(find.textContaining('Route and signature'), findsOneWidget);
+
+    await tester.tap(find.text('shop-api · Stripe webhooks'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Chats with Claude #1'), findsOneWidget);
+    expect(find.text('General'), findsWidgets);
+
+    await tester.tap(find.text('Router review'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('Every route has'), findsOneWidget);
+    expect(find.textContaining('Route and signature'), findsNothing);
+  });
+
+  testWidgets('a project chat opens empty and is created on the first prompt', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(App)),
+    );
+    container
+        .read(routerProvider)
+        .push(AppRoutes.agent('a5', projectId: 'p3'));
+    await _pumpChat(tester);
+    expect(find.textContaining('in portfolio-site?'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Add a sitemap');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final chat = container.read(
+      latestChatProvider((agentId: 'a5', projectId: 'p3')),
+    );
+    expect(chat?.title, 'Add a sitemap');
+    expect(find.text('portfolio-site · Add a sitemap'), findsOneWidget);
   });
 
   testWidgets('header button toggles between light and dark theme', (

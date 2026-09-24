@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:agent_core/agent_core.dart';
+import 'package:path/path.dart' as p;
 
 import 'config.dart';
 import 'process_utils.dart';
@@ -10,14 +11,21 @@ import 'runners/agent_runner.dart';
 import 'state_store.dart';
 import 'test_summary.dart';
 
+/// A CLI conversation and the folder it was started in. CLIs such as Claude
+/// Code keep sessions per folder, so a session only resumes in its own.
+typedef _Session = ({String id, String dir});
+
 /// The real [AgentBackend]: agents are CLI processes on this PC, projects are
 /// the folders listed in the config, and everything else lives in a
 /// [StateStore] so it survives restarts.
 ///
-/// Each agent runs at most one turn at a time. A task queued for an agent
-/// (`waiting`) starts as soon as the agent is free and ends `completed` or
-/// `failed` with its turn; after a successful task the project's
-/// `testCommand`, if any, records a test run.
+/// Each agent runs at most one turn at a time, in the chat it was prompted
+/// from. Every chat keeps its own CLI session: project chats run in their
+/// project's folder, the default chat in the agent's current folder (or a
+/// scratch folder when it has none). A task queued for an agent (`waiting`)
+/// starts as soon as the agent is free, in the agent's latest chat for the
+/// task's project, and ends `completed` or `failed` with its turn; after a
+/// successful task the project's `testCommand`, if any, records a test run.
 class LocalAgentBackend implements AgentBackend {
   LocalAgentBackend(
     this.config, {
@@ -47,11 +55,13 @@ class LocalAgentBackend implements AgentBackend {
   final _projectConfigs = <String, ProjectConfig>{};
   final _projects = <String, Project>{};
   final _agents = <String, Agent>{};
-  final _sessions = <String, String>{};
+  final _chats = <String, AgentChat>{};
+  final _sessions = <String, _Session>{};
   final _tasks = <String, AgentTask>{};
   final _messages = <String, List<ChatMessage>>{};
   final _todoLists = <String, TodoList>{};
   final _turns = <String, AgentTurn>{};
+  final _turnChats = <String, String>{};
   final _testing = <String>{};
   final _changes = StreamController<void>.broadcast();
   var _idCounter = 0;
@@ -108,14 +118,41 @@ class LocalAgentBackend implements AgentBackend {
             : old?.activity ?? 'Ready',
         lastActive: old?.lastActive ?? now,
         projectId: projectId,
+        projectIds: List.unmodifiable({
+          for (final id in old?.projectIds ?? const <String>[])
+            if (_projects.containsKey(id)) id,
+          ?projectId,
+        }),
         workingDir: old?.workingDir ?? _projectPath(projectId),
         branch: old?.branch,
         currentTaskId: interrupted ? null : old?.currentTaskId,
       );
     }
 
-    (saved?['sessions'] as Json? ?? const {}).forEach((agentId, session) {
-      if (_agents.containsKey(agentId)) _sessions[agentId] = session as String;
+    for (final e in saved?['chats'] as List? ?? const []) {
+      final chat = AgentChat.fromJson(e as Json);
+      if (_agents.containsKey(chat.agentId) &&
+          (chat.projectId == null || _projects.containsKey(chat.projectId))) {
+        _chats[chat.id] = chat;
+      }
+    }
+    for (final id in _agents.keys) {
+      _chats.putIfAbsent(id, () => AgentChat.general(id, now));
+    }
+
+    (saved?['sessions'] as Json? ?? const {}).forEach((chatId, session) {
+      final chat = _chats[chatId];
+      if (chat == null) return;
+      final restored = switch (session) {
+        {'id': final String id, 'dir': final String dir} => (id: id, dir: dir),
+        // Saved before chats: one session per agent, in its folder.
+        final String id => (
+          id: id,
+          dir: _workingDirOf(_agents[chat.agentId]!) ?? '',
+        ),
+        _ => null,
+      };
+      if (restored != null) _sessions[chatId] = restored;
     });
 
     for (final e in saved?['tasks'] as List? ?? const []) {
@@ -130,8 +167,11 @@ class LocalAgentBackend implements AgentBackend {
           : task;
     }
 
-    (saved?['messages'] as Json? ?? const {}).forEach((agentId, list) {
-      _messages[agentId] = [
+    // Messages saved before chats were keyed by agent id, which is also the
+    // id of each agent's default chat.
+    (saved?['messages'] as Json? ?? const {}).forEach((chatId, list) {
+      if (!_chats.containsKey(chatId)) return;
+      _messages[chatId] = [
         for (final m in list as List) ChatMessage.fromJson(m as Json),
       ];
     });
@@ -143,11 +183,15 @@ class LocalAgentBackend implements AgentBackend {
   }
 
   Json _snapshot() => {
-    'version': 1,
+    'version': 2,
     'nextId': _idCounter,
     'projects': {for (final p in _projects.values) p.id: p.toJson()},
     'agents': {for (final a in _agents.values) a.id: a.toJson()},
-    'sessions': _sessions,
+    'chats': [for (final c in _chats.values) c.toJson()],
+    'sessions': {
+      for (final e in _sessions.entries)
+        e.key: {'id': e.value.id, 'dir': e.value.dir},
+    },
     'tasks': [for (final t in _tasks.values) t.toJson()],
     'messages': {
       for (final e in _messages.entries)
@@ -176,20 +220,100 @@ class LocalAgentBackend implements AgentBackend {
   String? _workingDirOf(Agent agent) =>
       agent.workingDir ?? _projectPath(agent.projectId);
 
-  void _addMessage(String agentId, MessageRole role, String text) {
-    final list = _messages.putIfAbsent(agentId, () => []);
+  /// Where general-purpose chats run while their agent has no folder.
+  String get _scratchDir {
+    final dir = Directory(p.join(config.dataDir, 'scratch'));
+    dir.createSync(recursive: true);
+    return dir.path;
+  }
+
+  /// The folder a turn for [projectId] runs in: the agent's own folder when
+  /// it already works there (it may be a subfolder), otherwise the project's.
+  /// General-purpose turns (null) run wherever the agent is.
+  String? _dirFor(Agent agent, String? projectId) => switch (projectId) {
+    null => _workingDirOf(agent) ?? _scratchDir,
+    _ when agent.projectId == projectId => _workingDirOf(agent),
+    _ => _projectPath(projectId),
+  };
+
+  /// The agent's most recent chat in [projectId], started if there is none.
+  AgentChat _chatFor(String agentId, String projectId) {
+    AgentChat? latest;
+    for (final c in _chats.values) {
+      if (c.agentId == agentId &&
+          c.projectId == projectId &&
+          (latest == null || c.updatedAt.isAfter(latest.updatedAt))) {
+        latest = c;
+      }
+    }
+    if (latest != null) return latest;
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: projectId,
+      title: _projects[projectId]?.name ?? '',
+      createdAt: now,
+      updatedAt: now,
+    );
+    return _chats[chat.id] = chat;
+  }
+
+  /// Where notices about the agent go: the chat of its running turn, else
+  /// its chat for the project it is in, else its default chat.
+  String _noticeChatOf(Agent agent) =>
+      _turnChats[agent.id] ??
+      switch (agent.projectId) {
+        final projectId? => _chatFor(agent.id, projectId).id,
+        null => agent.id,
+      };
+
+  void _addMessage(String chatId, MessageRole role, String text) {
+    final chat = _chats[chatId];
+    if (chat == null) return;
+    final now = DateTime.now();
+    final list = _messages.putIfAbsent(chatId, () => []);
     list.add(
       ChatMessage(
         id: _nextId('m'),
-        agentId: agentId,
+        agentId: chat.agentId,
         role: role,
         text: text,
-        at: DateTime.now(),
+        at: now,
       ),
     );
     if (list.length > _maxMessages) {
       list.removeRange(0, list.length - _maxMessages);
     }
+    _chats[chatId] = chat.copyWith(
+      updatedAt: now,
+      title: role == MessageRole.user && chat.title.isEmpty
+          ? truncate(text, 40)
+          : null,
+    );
+  }
+
+  /// Stores [task] and keeps its linked to-do in step: ticked when the task
+  /// completes, unticked when a completed task is reopened.
+  void _putTask(AgentTask task) {
+    final before = _tasks[task.id];
+    _tasks[task.id] = task;
+    final link = task.todo;
+    final done = task.state == TaskState.completed;
+    if (link == null || (before?.state == TaskState.completed) == done) return;
+    final list = _todoLists[link.listId];
+    final item = list?.items.where((i) => i.id == link.itemId).firstOrNull;
+    if (list == null || item == null || item.done == done) return;
+    final now = DateTime.now();
+    _todoLists[list.id] = list.copyWith(
+      items: [
+        for (final i in list.items)
+          i.id == item.id
+              ? item.copyWith(done: done, completedAt: () => done ? now : null)
+              : i,
+      ],
+      updatedAt: now,
+    );
   }
 
   void _log(
@@ -226,32 +350,86 @@ class LocalAgentBackend implements AgentBackend {
       _watch(() => List.unmodifiable(_tasks.values));
 
   @override
-  Stream<List<ChatMessage>> watchMessages(String agentId) =>
-      _watch(() => List.unmodifiable(_messages[agentId] ?? const []));
+  Stream<List<AgentChat>> watchChats() =>
+      _watch(() => List.unmodifiable(_chats.values));
+
+  @override
+  Stream<List<ChatMessage>> watchMessages(String chatId) =>
+      _watch(() => List.unmodifiable(_messages[chatId] ?? const []));
 
   @override
   Stream<List<TodoList>> watchTodoLists() =>
       _watch(() => List.unmodifiable(_todoLists.values));
 
   @override
-  Future<void> sendPrompt(String agentId, String text) async {
-    final agent = _requireAgent(agentId);
-    _addMessage(agentId, MessageRole.user, text);
-    if (_turns.containsKey(agentId)) {
+  Future<void> sendPrompt(String chatId, String text) async {
+    final chat = _requireChat(chatId);
+    final agent = _requireAgent(chat.agentId);
+    _addMessage(chatId, MessageRole.user, text);
+    if (_turns.containsKey(agent.id)) {
       _addMessage(
-        agentId,
+        chatId,
         MessageRole.system,
         '${agent.name} is still busy. Wait for it or stop it first.',
       );
-    } else if (_workingDirOf(agent) case final dir?) {
-      _startTurn(agent, text, dir);
+    } else if (_dirFor(agent, chat.projectId) case final dir?) {
+      _startTurn(agent, chatId, text, dir);
     } else {
       _addMessage(
-        agentId,
+        chatId,
         MessageRole.system,
-        'Assign ${agent.name} to a project folder first.',
+        "This chat's project is no longer on the PC.",
       );
     }
+    _notify();
+  }
+
+  @override
+  Future<AgentChat> createChat(
+    String agentId, {
+    String? projectId,
+    String title = '',
+  }) async {
+    _requireAgent(agentId);
+    if (projectId != null && !_projects.containsKey(projectId)) {
+      throw ArgumentError('Unknown project $projectId');
+    }
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: projectId,
+      title: title.trim(),
+      createdAt: now,
+      updatedAt: now,
+    );
+    _chats[chat.id] = chat;
+    _notify();
+    return chat;
+  }
+
+  @override
+  Future<void> renameChat(String chatId, String title) async {
+    _chats[chatId] = _requireChat(chatId).copyWith(title: title.trim());
+    _notify();
+  }
+
+  @override
+  Future<void> deleteChat(String chatId) async {
+    if (_requireChat(chatId).isDefault) {
+      throw ArgumentError("An agent's general chat can't be deleted");
+    }
+    _chats.remove(chatId);
+    _messages.remove(chatId);
+    _sessions.remove(chatId);
+    _notify();
+  }
+
+  @override
+  Future<void> clearMessages(String chatId) async {
+    _requireChat(chatId);
+    _messages[chatId] = [];
+    _sessions.remove(chatId);
     _notify();
   }
 
@@ -270,7 +448,6 @@ class LocalAgentBackend implements AgentBackend {
     }
     await _interrupt(agentId);
 
-    if (agent.workingDir != workingDir) _sessions.remove(agentId);
     final assigned = _agents[agentId]!.copyWith(
       projectId: () => projectId,
       workingDir: () => workingDir,
@@ -284,15 +461,13 @@ class LocalAgentBackend implements AgentBackend {
 
     final task = taskId == null ? null : _tasks[taskId];
     _addMessage(
-      agentId,
+      _chatFor(agentId, projectId).id,
       MessageRole.system,
-      task == null
-          ? 'Assigned to $workingDir'
-          : 'Assigned to $workingDir · task "${task.title}"',
+      'Assigned to $workingDir',
     );
     _log(projectId, '${agent.name} assigned to $workingDir', agentId: agentId);
     if (task != null) {
-      _tasks[task.id] = task.copyWith(agentId: () => agentId);
+      _putTask(task.copyWith(agentId: () => agentId));
       _startTask(assigned, _tasks[task.id]!, workingDir);
     }
     _notify();
@@ -300,8 +475,32 @@ class LocalAgentBackend implements AgentBackend {
   }
 
   @override
+  Future<void> setAgentProjects(String agentId, List<String> projectIds) async {
+    final agent = _requireAgent(agentId);
+    for (final id in projectIds) {
+      if (!_projects.containsKey(id)) throw ArgumentError('Unknown project $id');
+    }
+    final ids = List<String>.unmodifiable(projectIds.toSet());
+    for (final id in ids.where((id) => !agent.projectIds.contains(id))) {
+      _log(id, '${agent.name} joined the project', agentId: agentId);
+    }
+    for (final id in agent.projectIds.where((id) => !ids.contains(id))) {
+      _log(id, '${agent.name} left the project', agentId: agentId);
+    }
+    final leaves = agent.projectId != null && !ids.contains(agent.projectId);
+    _agents[agentId] = agent.copyWith(
+      projectIds: ids,
+      projectId: leaves ? () => null : null,
+      workingDir: leaves ? () => null : null,
+      branch: leaves ? () => null : null,
+    );
+    _notify();
+  }
+
+  @override
   Future<void> stopAgent(String agentId) async {
     final agent = _requireAgent(agentId);
+    final chatId = _noticeChatOf(agent);
     await _interrupt(agentId, requeueAs: TaskState.backlog);
     _agents[agentId] = _agents[agentId]!.copyWith(
       status: AgentStatus.idle,
@@ -309,7 +508,7 @@ class LocalAgentBackend implements AgentBackend {
       currentTaskId: () => null,
       lastActive: DateTime.now(),
     );
-    _addMessage(agentId, MessageRole.system, 'Stopped by user');
+    _addMessage(chatId, MessageRole.system, 'Stopped by user');
     if (agent.projectId case final projectId?) {
       _log(
         projectId,
@@ -321,19 +520,13 @@ class LocalAgentBackend implements AgentBackend {
     _notify();
   }
 
-  /// Starting a fresh chat also starts a fresh CLI conversation.
-  @override
-  Future<void> clearMessages(String agentId) async {
-    _messages[agentId] = [];
-    _sessions.remove(agentId);
-    _notify();
-  }
-
   @override
   Future<AgentTask> createTask(
     String title,
     String projectId, {
     String? agentId,
+    String description = '',
+    TodoLink? todo,
   }) async {
     if (!_projects.containsKey(projectId)) {
       throw ArgumentError('Unknown project $projectId');
@@ -343,13 +536,15 @@ class LocalAgentBackend implements AgentBackend {
     final task = AgentTask(
       id: _nextId('t'),
       title: title,
+      description: description.trim(),
       projectId: projectId,
       agentId: agentId,
+      todo: todo,
       state: agentId == null ? TaskState.backlog : TaskState.waiting,
       createdAt: now,
       updatedAt: now,
     );
-    _tasks[task.id] = task;
+    _putTask(task);
     _log(projectId, 'Task created: $title', agentId: agentId);
     _notify();
     if (agentId != null) _startNextTask(agentId);
@@ -367,13 +562,16 @@ class LocalAgentBackend implements AgentBackend {
 
     if (isCurrent && state != TaskState.active) {
       _turns.remove(agent.id)?.cancel();
+      _turnChats.remove(agent.id);
     }
-    _tasks[taskId] = task.copyWith(
-      state: state,
-      agentId: state == TaskState.backlog ? () => null : null,
-      progress: state == TaskState.completed ? 1 : null,
-      updatedAt: now,
-      completedAt: () => done ? now : null,
+    _putTask(
+      task.copyWith(
+        state: state,
+        agentId: state == TaskState.backlog ? () => null : null,
+        progress: state == TaskState.completed ? 1 : null,
+        updatedAt: now,
+        completedAt: () => done ? now : null,
+      ),
     );
     if (isCurrent && state != TaskState.active) {
       _agents[agent.id] = agent.copyWith(
@@ -391,10 +589,10 @@ class LocalAgentBackend implements AgentBackend {
 
     if (agent == null || _turns.containsKey(agent.id)) return;
     if (state == TaskState.active) {
-      final dir = agent.projectId == task.projectId
-          ? _workingDirOf(agent)
-          : _projectPath(task.projectId);
-      if (dir != null) _startTask(_agents[agent.id]!, _tasks[taskId]!, dir);
+      final current = _agents[agent.id]!;
+      if (_dirFor(current, task.projectId) case final dir?) {
+        _startTask(current, _tasks[taskId]!, dir);
+      }
       _notify();
     } else if (state == TaskState.waiting) {
       _startNextTask(agent.id);
@@ -543,6 +741,7 @@ class LocalAgentBackend implements AgentBackend {
       turn.cancel();
     }
     _turns.clear();
+    _turnChats.clear();
     _store
       ..save(_snapshot)
       ..flush();
@@ -553,15 +752,40 @@ class LocalAgentBackend implements AgentBackend {
   Agent _requireAgent(String agentId) =>
       _agents[agentId] ?? (throw ArgumentError('Unknown agent $agentId'));
 
-  void _startTurn(Agent agent, String prompt, String dir, {AgentTask? task}) {
+  AgentChat _requireChat(String chatId) =>
+      _chats[chatId] ?? (throw ArgumentError('Unknown chat $chatId'));
+
+  /// Runs [prompt] in [dir] as the next turn of [chatId]. A project chat
+  /// moves the agent to its project.
+  void _startTurn(
+    Agent agent,
+    String chatId,
+    String prompt,
+    String dir, {
+    AgentTask? task,
+  }) {
     final now = DateTime.now();
+    final session = _sessions[chatId];
     final turn = _runners[agent.id]!.start(
       prompt: prompt,
       workingDir: dir,
-      sessionId: _sessions[agent.id],
+      sessionId: session != null && session.dir == dir ? session.id : null,
     );
     _turns[agent.id] = turn;
-    _agents[agent.id] = agent.copyWith(
+    _turnChats[agent.id] = chatId;
+
+    var current = agent;
+    final projectId = _chats[chatId]?.projectId;
+    if (projectId != null &&
+        (agent.projectId != projectId || agent.workingDir != dir)) {
+      final branch = _projects[projectId]?.branch ?? '';
+      current = agent.copyWith(
+        projectId: () => projectId,
+        workingDir: () => dir,
+        branch: () => branch.isEmpty ? null : branch,
+      );
+    }
+    _agents[agent.id] = current.copyWith(
       status: AgentStatus.running,
       activity: task == null
           ? 'Thinking about: ${truncate(prompt, 40)}'
@@ -570,19 +794,23 @@ class LocalAgentBackend implements AgentBackend {
       lastActive: now,
     );
     if (task != null) {
-      _tasks[task.id] = task.copyWith(
-        state: TaskState.active,
-        agentId: () => agent.id,
-        progress: 0.05,
-        updatedAt: now,
-        completedAt: () => null,
+      _putTask(
+        task.copyWith(
+          state: TaskState.active,
+          agentId: () => agent.id,
+          progress: 0.05,
+          updatedAt: now,
+          completedAt: () => null,
+        ),
       );
     }
     turn.events.listen(
-      (event) => _onEvent(agent.id, turn, task?.id, event),
+      (event) => _onEvent(agent.id, turn, chatId, dir, task?.id, event),
       onError: (Object e) => _onEvent(
         agent.id,
         turn,
+        chatId,
+        dir,
         task?.id,
         FinishedEvent(success: false, error: '$e'),
       ),
@@ -593,6 +821,8 @@ class LocalAgentBackend implements AgentBackend {
   void _onEvent(
     String agentId,
     AgentTurn turn,
+    String chatId,
+    String dir,
     String? taskId,
     RunnerEvent event,
   ) {
@@ -605,50 +835,64 @@ class LocalAgentBackend implements AgentBackend {
 
     switch (event) {
       case SessionEvent(:final sessionId):
-        _sessions[agentId] = sessionId;
+        if (_chats.containsKey(chatId)) {
+          _sessions[chatId] = (id: sessionId, dir: dir);
+        }
       case ActivityEvent(:final activity):
         _agents[agentId] = agent.copyWith(activity: activity, lastActive: now);
         if (task != null && task.steps.isEmpty) {
-          _tasks[task.id] = task.copyWith(
-            progress: min(0.9, task.progress + 0.02),
-            updatedAt: now,
+          _putTask(
+            task.copyWith(
+              progress: min(0.9, task.progress + 0.02),
+              updatedAt: now,
+            ),
           );
         }
       case ReplyEvent(:final text):
-        _addMessage(agentId, MessageRole.agent, text);
+        _addMessage(chatId, MessageRole.agent, text);
         _agents[agentId] = agent.copyWith(lastActive: now);
       case StepsEvent(:final steps):
         if (task != null && steps.isNotEmpty) {
           final done = steps.where((s) => s.done).length;
-          _tasks[task.id] = task.copyWith(
-            steps: steps,
-            progress: max(0.05, 0.95 * done / steps.length),
-            updatedAt: now,
+          _putTask(
+            task.copyWith(
+              steps: steps,
+              progress: max(0.05, 0.95 * done / steps.length),
+              updatedAt: now,
+            ),
           );
         }
       case FinishedEvent():
-        _finishTurn(agent, task, event);
+        _finishTurn(agent, chatId, task, event);
     }
     _notify();
   }
 
-  void _finishTurn(Agent agent, AgentTask? task, FinishedEvent event) {
+  void _finishTurn(
+    Agent agent,
+    String chatId,
+    AgentTask? task,
+    FinishedEvent event,
+  ) {
     _turns.remove(agent.id);
+    _turnChats.remove(agent.id);
     final now = DateTime.now();
     final ok = event.success;
     final error = event.error ?? 'unknown error';
     if (!ok) {
-      _addMessage(agent.id, MessageRole.system, 'Failed: $error');
+      _addMessage(chatId, MessageRole.system, 'Failed: $error');
       // A broken session would fail every later turn too.
-      _sessions.remove(agent.id);
+      _sessions.remove(chatId);
     }
 
     if (task != null) {
-      _tasks[task.id] = task.copyWith(
-        state: ok ? TaskState.completed : TaskState.failed,
-        progress: ok ? 1 : null,
-        updatedAt: now,
-        completedAt: () => now,
+      _putTask(
+        task.copyWith(
+          state: ok ? TaskState.completed : TaskState.failed,
+          progress: ok ? 1 : null,
+          updatedAt: now,
+          completedAt: () => now,
+        ),
       );
       _log(
         task.projectId,
@@ -684,14 +928,17 @@ class LocalAgentBackend implements AgentBackend {
     TaskState requeueAs = TaskState.waiting,
   }) async {
     final turn = _turns.remove(agentId);
+    _turnChats.remove(agentId);
     if (turn == null) return;
     final taskId = _agents[agentId]?.currentTaskId;
     if (_tasks[taskId] case final task?) {
-      _tasks[task.id] = task.copyWith(
-        state: requeueAs,
-        agentId: requeueAs == TaskState.backlog ? () => null : null,
-        progress: 0,
-        updatedAt: DateTime.now(),
+      _putTask(
+        task.copyWith(
+          state: requeueAs,
+          agentId: requeueAs == TaskState.backlog ? () => null : null,
+          progress: 0,
+          updatedAt: DateTime.now(),
+        ),
       );
     }
     await turn.cancel();
@@ -710,29 +957,21 @@ class LocalAgentBackend implements AgentBackend {
       }
     }
     if (next == null) return;
-    final dir = agent.projectId == next.projectId
-        ? _workingDirOf(agent)
-        : _projectPath(next.projectId);
+    final dir = _dirFor(agent, next.projectId);
     if (dir == null) return;
     _startTask(agent, next, dir);
     _notify();
   }
 
+  /// Runs [task] in the agent's latest chat for the task's project, posting
+  /// the task's title and notes there as the prompt.
   void _startTask(Agent agent, AgentTask task, String dir) {
-    var current = agent;
-    if (agent.projectId != task.projectId || agent.workingDir != dir) {
-      _sessions.remove(agent.id);
-      final branch = _projects[task.projectId]?.branch ?? '';
-      current = agent.copyWith(
-        projectId: () => task.projectId,
-        workingDir: () => dir,
-        branch: () => branch.isEmpty ? null : branch,
-      );
-    }
-    _addMessage(agent.id, MessageRole.system, 'Starting task "${task.title}"');
+    final chat = _chatFor(agent.id, task.projectId);
+    _addMessage(chat.id, MessageRole.user, task.brief);
     _startTurn(
-      current,
-      'Task: ${task.title}\n\n'
+      agent,
+      chat.id,
+      '${task.brief}\n\n'
       'Work on this in the current project. When you are done, summarize '
       'what you changed.',
       dir,

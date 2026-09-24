@@ -12,12 +12,20 @@ import 'status/status_badge.dart';
 import 'status/status_visuals.dart';
 
 /// List card for an agent: avatar, status, project/folder and current
-/// activity. Tapping opens the agent chat unless [onTap] is given.
+/// activity. Tapping opens the agent chat unless [onTap] is given: its chat
+/// for [projectId] when set, otherwise its latest chat.
 class AgentCard extends ConsumerWidget {
-  const AgentCard(this.agent, {super.key, this.onTap, this.compact = false});
+  const AgentCard(
+    this.agent, {
+    super.key,
+    this.onTap,
+    this.projectId,
+    this.compact = false,
+  });
 
   final Agent agent;
   final VoidCallback? onTap;
+  final String? projectId;
 
   /// Fixed-width variant for horizontal carousels.
   final bool compact;
@@ -28,6 +36,9 @@ class AgentCard extends ConsumerWidget {
     final project = agent.projectId == null
         ? null
         : ref.watch(projectProvider(agent.projectId!));
+    final otherProjects = agent.projectIds
+        .where((id) => id != agent.projectId)
+        .length;
 
     final header = Row(
       children: [
@@ -59,7 +70,11 @@ class AgentCard extends ConsumerWidget {
       width: compact ? 260 : null,
       child: Card(
         child: InkWell(
-          onTap: onTap ?? () => context.push(AppRoutes.agent(agent.id)),
+          onTap:
+              onTap ??
+              () => context.push(
+                AppRoutes.agent(agent.id, projectId: projectId),
+              ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -79,7 +94,17 @@ class AgentCard extends ConsumerWidget {
                   children: [
                     if (project != null)
                       Flexible(
-                        child: InfoChip(project.name, icon: Icons.folder_open),
+                        child: InfoChip(
+                          otherProjects > 0
+                              ? '${project.name} +$otherProjects'
+                              : project.name,
+                          icon: Icons.folder_open,
+                        ),
+                      )
+                    else if (otherProjects > 0)
+                      InfoChip(
+                        '$otherProjects project${otherProjects == 1 ? '' : 's'}',
+                        icon: Icons.folder_outlined,
                       )
                     else
                       const InfoChip('Unassigned', icon: Icons.folder_off),

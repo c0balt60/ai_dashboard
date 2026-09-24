@@ -221,16 +221,49 @@ class HttpAgentBackend implements AgentBackend {
       _watch(Topics.tasks, AgentTask.fromJson);
 
   @override
-  Stream<List<ChatMessage>> watchMessages(String agentId) =>
-      _watch(Topics.messages(agentId), ChatMessage.fromJson);
+  Stream<List<AgentChat>> watchChats() =>
+      _watch(Topics.chats, AgentChat.fromJson);
+
+  @override
+  Stream<List<ChatMessage>> watchMessages(String chatId) =>
+      _watch(Topics.messages(chatId), ChatMessage.fromJson);
 
   @override
   Stream<List<TodoList>> watchTodoLists() =>
       _watch(Topics.todoLists, TodoList.fromJson);
 
   @override
-  Future<void> sendPrompt(String agentId, String text) =>
-      _request('POST', ApiPaths.prompt(agentId), body: {'text': text});
+  Future<void> sendPrompt(String chatId, String text) =>
+      _request('POST', ApiPaths.prompt(chatId), body: {'text': text});
+
+  @override
+  Future<AgentChat> createChat(
+    String agentId, {
+    String? projectId,
+    String title = '',
+  }) async => AgentChat.fromJson(
+    await _request(
+      'POST',
+      ApiPaths.chats,
+      body: {'agentId': agentId, 'projectId': ?projectId, 'title': title},
+    ),
+  );
+
+  @override
+  Future<void> renameChat(String chatId, String title) =>
+      _request('PATCH', ApiPaths.chat(chatId), body: {'title': title});
+
+  @override
+  Future<void> deleteChat(String chatId) =>
+      _request('DELETE', ApiPaths.chat(chatId));
+
+  @override
+  Future<void> setAgentProjects(String agentId, List<String> projectIds) =>
+      _request(
+        'PUT',
+        ApiPaths.agentProjects(agentId),
+        body: {'projectIds': projectIds},
+      );
 
   @override
   Future<void> assignAgent(
@@ -249,19 +282,27 @@ class HttpAgentBackend implements AgentBackend {
       _request('POST', ApiPaths.stop(agentId));
 
   @override
-  Future<void> clearMessages(String agentId) =>
-      _request('DELETE', ApiPaths.clearMessages(agentId));
+  Future<void> clearMessages(String chatId) =>
+      _request('DELETE', ApiPaths.clearMessages(chatId));
 
   @override
   Future<AgentTask> createTask(
     String title,
     String projectId, {
     String? agentId,
+    String description = '',
+    TodoLink? todo,
   }) async => AgentTask.fromJson(
     await _request(
       'POST',
       ApiPaths.tasks,
-      body: {'title': title, 'projectId': projectId, 'agentId': ?agentId},
+      body: {
+        'title': title,
+        'projectId': projectId,
+        'agentId': ?agentId,
+        if (description.isNotEmpty) 'description': description,
+        if (todo != null) 'todo': todo.toJson(),
+      },
     ),
   );
 

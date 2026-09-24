@@ -455,6 +455,15 @@ class _TaskDetailsSheet extends ConsumerWidget {
       color: scheme.onSurfaceVariant,
     );
     final doneSteps = task.steps.where((s) => s.done).length;
+    final todo = switch (task.todo) {
+      final link? =>
+        ref
+            .watch(todoListProvider(link.listId))
+            ?.items
+            .where((i) => i.id == link.itemId)
+            .firstOrNull,
+      null => null,
+    };
 
     final canAssign =
         task.state == TaskState.backlog || task.state == TaskState.waiting;
@@ -476,11 +485,23 @@ class _TaskDetailsSheet extends ConsumerWidget {
                 child: StatusBadge(visual),
               ),
             ),
+            if (task.description.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(task.description, style: muted),
+            ],
             const SizedBox(height: 12),
             _DetailRow(
               icon: Icons.folder_outlined,
               text: project?.name ?? 'Unknown project',
             ),
+            if (todo != null)
+              _DetailRow(
+                icon: Icons.checklist,
+                text: todo.done
+                    ? 'From your to-do "${todo.title}" · ticked off'
+                    : 'From your to-do "${todo.title}" · ticked off when '
+                          'this task completes',
+              ),
             _DetailRow(
               icon: agent?.type.icon ?? Icons.person_off_outlined,
               text: agent == null
@@ -587,7 +608,9 @@ class _TaskDetailsSheet extends ConsumerWidget {
                     onPressed: () {
                       final router = GoRouter.of(context);
                       Navigator.pop(context);
-                      router.push(AppRoutes.agent(agent.id));
+                      router.push(
+                        AppRoutes.agent(agent.id, projectId: task.projectId),
+                      );
                     },
                     icon: const Icon(Icons.chat_bubble_outline),
                     label: const Text('Open agent chat'),

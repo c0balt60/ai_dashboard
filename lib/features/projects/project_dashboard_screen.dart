@@ -328,7 +328,11 @@ class _OverviewTab extends ConsumerWidget {
           ResponsiveGrid(
             children: [
               for (final agent in agents)
-                AgentCard(agent, key: ValueKey(agent.id)),
+                AgentCard(
+                  agent,
+                  key: ValueKey(agent.id),
+                  projectId: projectId,
+                ),
             ],
           ),
         SectionHeader(
@@ -374,7 +378,9 @@ class _CurrentTaskCard extends ConsumerWidget {
       child: InkWell(
         onTap: agent == null
             ? null
-            : () => context.push(AppRoutes.agent(agent.id)),
+            : () => context.push(
+                AppRoutes.agent(agent.id, projectId: task.projectId),
+              ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

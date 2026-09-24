@@ -216,6 +216,7 @@ class MockSeed {
       activity: 'Handling checkout.session.completed events',
       lastActive: _ago(minutes: 1),
       projectId: 'p2',
+      projectIds: const ['p2', 'p1'],
       workingDir: r'C:\dev\shop-api',
       branch: 'feature/payments',
       currentTaskId: 't1',
@@ -228,6 +229,7 @@ class MockSeed {
       activity: 'Building message bubbles',
       lastActive: _ago(minutes: 2),
       projectId: 'p1',
+      projectIds: const ['p1'],
       workingDir: r'C:\dev\ai_dashboard\lib\features',
       branch: 'feat/agent-chat',
       currentTaskId: 't2',
@@ -240,6 +242,7 @@ class MockSeed {
       activity: 'Waiting for approval of test plan',
       lastActive: _ago(minutes: 20),
       projectId: 'p2',
+      projectIds: const ['p2'],
       workingDir: r'C:\dev\shop-api\test',
       branch: 'feature/payments',
     ),
@@ -251,6 +254,7 @@ class MockSeed {
       activity: '3 tests still failing after 4 attempts',
       lastActive: _ago(minutes: 20),
       projectId: 'p4',
+      projectIds: const ['p4'],
       workingDir: r'C:\dev\ml-pipeline',
       branch: 'fix/flaky-tests',
     ),
@@ -270,6 +274,7 @@ class MockSeed {
       activity: 'Finished: Migrate to Tailwind v4',
       lastActive: _ago(hours: 1),
       projectId: 'p3',
+      projectIds: const ['p3'],
       workingDir: r'C:\dev\portfolio-site',
       branch: 'main',
     ),
@@ -280,6 +285,7 @@ class MockSeed {
     String title,
     String projectId,
     TaskState state, {
+    String description = '',
     String? agentId,
     double progress = 0,
     List<String> steps = const [],
@@ -290,6 +296,7 @@ class MockSeed {
     return AgentTask(
       id: id,
       title: title,
+      description: description,
       projectId: projectId,
       agentId: agentId,
       state: state,
@@ -310,6 +317,9 @@ class MockSeed {
       'Implement Stripe webhook handler',
       'p2',
       TaskState.active,
+      description:
+          'Verify signatures with STRIPE_WEBHOOK_SECRET and mark orders '
+          'paid on checkout.session.completed.',
       agentId: 'a1',
       progress: 0.55,
       steps: const [
@@ -447,6 +457,33 @@ class MockSeed {
     ),
   ];
 
+  AgentChat _chat(
+    String id,
+    String agentId,
+    String projectId,
+    String title,
+    DateTime created,
+    DateTime updated,
+  ) => AgentChat(
+    id: id,
+    agentId: agentId,
+    projectId: projectId,
+    title: title,
+    createdAt: created,
+    updatedAt: updated,
+  );
+
+  /// Every agent's general chat plus their project chats. The general chats
+  /// are older than the project ones, so agents open on their project work.
+  late final List<AgentChat> chats = [
+    for (final a in agents) AgentChat.general(a.id, _ago(days: 7)),
+    _chat('c1', 'a1', 'p2', 'Stripe webhooks', _ago(hours: 2), _ago(minutes: 35)),
+    _chat('c2', 'a2', 'p1', 'Agent chat screen', _ago(hours: 2), _ago(minutes: 2)),
+    _chat('c3', 'a3', 'p2', 'Checkout test plan', _ago(hours: 1), _ago(minutes: 20)),
+    _chat('c4', 'a4', 'p4', 'Flaky tests', _ago(hours: 1), _ago(minutes: 20)),
+    _chat('c5', 'a1', 'p1', 'Router review', _ago(hours: 4), _ago(hours: 3)),
+  ];
+
   ChatMessage _msg(
     String id,
     String agentId,
@@ -455,8 +492,26 @@ class MockSeed {
     DateTime at,
   ) => ChatMessage(id: id, agentId: agentId, role: role, text: text, at: at);
 
+  /// Keyed by chat id.
   late final Map<String, List<ChatMessage>> messages = {
-    'a1': [
+    'c5': [
+      _msg(
+        'm11',
+        'a1',
+        MessageRole.user,
+        'Can you check lib/app/router.dart for routes missing from AppRoutes?',
+        _ago(hours: 3, minutes: 10),
+      ),
+      _msg(
+        'm12',
+        'a1',
+        MessageRole.agent,
+        'Every route has a matching `AppRoutes` helper. `/new-task` is the '
+            'only one with query parameters, and all of them are optional.',
+        _ago(hours: 3),
+      ),
+    ],
+    'c1': [
       _msg(
         'm1',
         'a1',
@@ -491,7 +546,7 @@ class MockSeed {
         _ago(minutes: 35),
       ),
     ],
-    'a2': [
+    'c2': [
       _msg(
         'm5',
         'a2',
@@ -514,7 +569,7 @@ class MockSeed {
         _ago(minutes: 2),
       ),
     ],
-    'a3': [
+    'c3': [
       _msg(
         'm8',
         'a3',
@@ -523,7 +578,7 @@ class MockSeed {
         _ago(minutes: 20),
       ),
     ],
-    'a4': [
+    'c4': [
       _msg(
         'm9',
         'a4',

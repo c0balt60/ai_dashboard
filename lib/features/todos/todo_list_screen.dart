@@ -317,11 +317,22 @@ class _TodoItemTile extends ConsumerWidget {
     final agents = [
       for (final id in item.agentIds) ?ref.watch(agentProvider(id)),
     ];
+    final task = ref.watch(taskForTodoProvider(item.id));
+    final taskAgent = task?.agentId == null
+        ? null
+        : ref.watch(agentProvider(task!.agentId!));
+    final taskVisual = task?.state.visual(context);
     final due = item.dueVisual(context);
     final range = item.startDate == null
         ? null
         : dateRange(item.startDate, item.dueDate);
     final chips = [
+      if (task != null && taskVisual != null)
+        InfoChip(
+          [?taskAgent?.name, taskVisual.label].join(' · '),
+          icon: taskVisual.icon,
+          color: taskVisual.color,
+        ),
       if (due != null) InfoChip(due.label, icon: due.icon, color: due.color),
       if (range != null) InfoChip(range, icon: Icons.date_range),
       if (item.done && item.completedAt != null)

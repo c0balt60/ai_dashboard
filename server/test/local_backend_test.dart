@@ -199,8 +199,79 @@ void main() {
     expect((await second.watchTodoLists().first).single.title, 'Release');
     final task = (await second.watchTasks().first).single;
     expect(task.state, TaskState.active, reason: 'restarted on boot');
-    expect(runner.turns.single.sessionId, 's-9');
+    expect(
+      runner.turns.single.sessionId,
+      isNull,
+      reason: 'tasks run in the project chat, not the general one',
+    );
+
+    runner.turns.single.emit(const FinishedEvent(success: false));
+    await settle();
+    await second.sendPrompt('claude', 'Still there?');
+    expect(runner.turns.last.sessionId, 's-9');
   });
+
+  test('each chat keeps its own history and CLI session', () async {
+    final backend = create();
+    addTearDown(backend.dispose);
+
+    final chat = await backend.createChat('claude', projectId: 'app');
+    await backend.sendPrompt(chat.id, 'Plan the refactor');
+    runner.turns.last
+      ..emit(const SessionEvent('project-session'))
+      ..emit(const FinishedEvent(success: true));
+    await settle();
+
+    await backend.sendPrompt('claude', 'What is a monad?');
+    expect(runner.turns.last.sessionId, isNull);
+    runner.turns.last.emit(const FinishedEvent(success: true));
+    await settle();
+
+    await backend.sendPrompt(chat.id, 'Go ahead');
+    expect(runner.turns.last.sessionId, 'project-session');
+    runner.turns.last.emit(const FinishedEvent(success: true));
+    await settle();
+
+    final chats = await backend.watchChats().first;
+    expect(
+      chats.singleWhere((c) => c.id == chat.id).title,
+      'Plan the refactor',
+    );
+    expect(await backend.watchMessages(chat.id).first, hasLength(2));
+    await expectLater(
+      backend.deleteChat('claude'),
+      throwsArgumentError,
+      reason: 'the general chat stays',
+    );
+  });
+
+  test('a task gets its notes and ticks off the to-do it came from', () async {
+    final backend = create();
+    addTearDown(backend.dispose);
+
+    final list = await backend.createTodoList('Release');
+    final item = await backend.addTodoItem(list.id, title: 'Fix login');
+    await backend.createTask(
+      'Fix login',
+      'app',
+      agentId: 'claude',
+      description: 'Users with SSO get a blank page.',
+      todo: TodoLink(listId: list.id, itemId: item.id),
+    );
+    expect(runner.turns.single.prompt, contains('blank page'));
+
+    runner.turns.single.emit(const FinishedEvent(success: true));
+    await settle();
+    final stored = (await backend.watchTodoLists().first).single.items.single;
+    expect(stored.done, isTrue);
+
+    // Let the test command it triggered finish before the folder is deleted.
+    for (var i = 0; i < 100; i++) {
+      final run = (await backend.watchProjects().first).single.latestTestRun;
+      if (run != null && run.status != TestStatus.running) break;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+  }, timeout: const Timeout(Duration(seconds: 30)));
 
   test('runCommand runs in the project folder and reports failures', () async {
     final backend = create();

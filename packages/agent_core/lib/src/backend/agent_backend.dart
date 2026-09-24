@@ -12,11 +12,33 @@ abstract interface class AgentBackend {
   Stream<List<Project>> watchProjects();
   Stream<List<AgentTask>> watchTasks();
 
-  Stream<List<ChatMessage>> watchMessages(String agentId);
+  /// Every agent's chats, including each agent's default chat.
+  Stream<List<AgentChat>> watchChats();
 
-  Future<void> sendPrompt(String agentId, String text);
+  Stream<List<ChatMessage>> watchMessages(String chatId);
 
-  /// Points an agent at a project folder, optionally handing it a task.
+  /// Runs a turn in the chat's project folder (the agent's current folder for
+  /// its default chat). The first prompt of an untitled chat names it.
+  Future<void> sendPrompt(String chatId, String text);
+
+  /// Starts a chat with [agentId], in [projectId] or general purpose.
+  Future<AgentChat> createChat(
+    String agentId, {
+    String? projectId,
+    String title = '',
+  });
+
+  Future<void> renameChat(String chatId, String title);
+
+  /// Deletes a chat and its messages. An agent's default chat can't be
+  /// deleted, only cleared.
+  Future<void> deleteChat(String chatId);
+
+  /// Starting over also starts a fresh CLI conversation.
+  Future<void> clearMessages(String chatId);
+
+  /// Points an agent at a project folder, optionally handing it a task. The
+  /// project joins the agent's projects.
   Future<void> assignAgent(
     String agentId, {
     required String projectId,
@@ -24,15 +46,21 @@ abstract interface class AgentBackend {
     String? taskId,
   });
 
+  /// Replaces the projects the agent belongs to without interrupting it.
+  /// Leaving its current project unassigns it from that folder.
+  Future<void> setAgentProjects(String agentId, List<String> projectIds);
+
   Future<void> stopAgent(String agentId);
-  Future<void> clearMessages(String agentId);
 
   /// Creates a task. With an [agentId] it goes straight to `waiting` for that
-  /// agent, otherwise to the backlog.
+  /// agent, otherwise to the backlog. A [todo] link keeps that to-do item's
+  /// checkbox in step with the task.
   Future<AgentTask> createTask(
     String title,
     String projectId, {
     String? agentId,
+    String description = '',
+    TodoLink? todo,
   });
 
   Future<void> updateTaskState(String taskId, TaskState state);

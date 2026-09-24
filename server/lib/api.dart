@@ -81,9 +81,36 @@ Router _apiRouter(AgentBackend backend) {
       }),
     )
     ..post(
+      ApiPaths.chats,
+      (Request r) => action(r, (b) async {
+        final chat = await backend.createChat(
+          b['agentId'] as String,
+          projectId: b['projectId'] as String?,
+          title: b['title'] as String? ?? '',
+        );
+        return chat.toJson();
+      }),
+    )
+    ..patch(
+      ApiPaths.chat('<id>'),
+      (Request r, String id) =>
+          action(r, (b) => backend.renameChat(id, b['title'] as String)),
+    )
+    ..delete(
+      ApiPaths.chat('<id>'),
+      (Request r, String id) => action(r, (_) => backend.deleteChat(id)),
+    )
+    ..post(
       ApiPaths.prompt('<id>'),
       (Request r, String id) =>
           action(r, (b) => backend.sendPrompt(id, b['text'] as String)),
+    )
+    ..put(
+      ApiPaths.agentProjects('<id>'),
+      (Request r, String id) => action(
+        r,
+        (b) => backend.setAgentProjects(id, decodeStrings(b['projectIds'])),
+      ),
     )
     ..post(
       ApiPaths.assign('<id>'),
@@ -112,6 +139,11 @@ Router _apiRouter(AgentBackend backend) {
           b['title'] as String,
           b['projectId'] as String,
           agentId: b['agentId'] as String?,
+          description: b['description'] as String? ?? '',
+          todo: switch (b['todo']) {
+            final Json link => TodoLink.fromJson(link),
+            _ => null,
+          },
         );
         return task.toJson();
       }),

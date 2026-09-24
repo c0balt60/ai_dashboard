@@ -19,11 +19,15 @@ abstract final class ApiPaths {
   static const ws = '/api/ws';
   static const simulation = '/api/simulation';
 
-  static String prompt(String agentId) => '/api/agents/$agentId/prompt';
   static String assign(String agentId) => '/api/agents/$agentId/assign';
+  static String agentProjects(String agentId) =>
+      '/api/agents/$agentId/projects';
   static String stop(String agentId) => '/api/agents/$agentId/stop';
-  static String clearMessages(String agentId) =>
-      '/api/agents/$agentId/messages';
+
+  static const chats = '/api/chats';
+  static String chat(String chatId) => '/api/chats/$chatId';
+  static String prompt(String chatId) => '/api/chats/$chatId/prompt';
+  static String clearMessages(String chatId) => '/api/chats/$chatId/messages';
 
   static const tasks = '/api/tasks';
   static String taskState(String taskId) => '/api/tasks/$taskId/state';
@@ -44,12 +48,13 @@ abstract final class Topics {
   static const projects = 'projects';
   static const tasks = 'tasks';
   static const todoLists = 'todoLists';
+  static const chats = 'chats';
   static const _messagesPrefix = 'messages:';
 
-  static String messages(String agentId) => '$_messagesPrefix$agentId';
+  static String messages(String chatId) => '$_messagesPrefix$chatId';
 
-  /// The agent id of a [messages] topic, or null for any other topic.
-  static String? messagesAgent(String topic) =>
+  /// The chat id of a [messages] topic, or null for any other topic.
+  static String? messagesChat(String topic) =>
       topic.startsWith(_messagesPrefix)
       ? topic.substring(_messagesPrefix.length)
       : null;
@@ -74,9 +79,12 @@ Stream<List<Json>>? watchTopicJson(AgentBackend backend, String topic) {
     Topics.todoLists => backend.watchTodoLists().map(
       (l) => encode(l, (t) => t.toJson()),
     ),
-    _ => switch (Topics.messagesAgent(topic)) {
-      final agentId? =>
-        backend.watchMessages(agentId).map((l) => encode(l, (m) => m.toJson())),
+    Topics.chats => backend.watchChats().map(
+      (l) => encode(l, (c) => c.toJson()),
+    ),
+    _ => switch (Topics.messagesChat(topic)) {
+      final chatId? =>
+        backend.watchMessages(chatId).map((l) => encode(l, (m) => m.toJson())),
       null => null,
     },
   };

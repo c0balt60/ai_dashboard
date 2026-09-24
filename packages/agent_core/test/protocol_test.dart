@@ -4,7 +4,7 @@ import 'package:agent_core/agent_core.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('frames round-trip and messages topics carry the agent id', () {
+  test('frames round-trip and messages topics carry the chat id', () {
     for (final frame in [
       const SubscribeFrame('agents'),
       const UnsubscribeFrame('tasks'),
@@ -16,8 +16,8 @@ void main() {
       final json = jsonDecode(jsonEncode(frame.toJson())) as Json;
       expect(Frame.fromJson(json).toJson(), frame.toJson());
     }
-    expect(Topics.messagesAgent(Topics.messages('a7')), 'a7');
-    expect(Topics.messagesAgent(Topics.agents), isNull);
+    expect(Topics.messagesChat(Topics.messages('c7')), 'c7');
+    expect(Topics.messagesChat(Topics.agents), isNull);
   });
 
   test('watchTopicJson serves each topic from the backend', () async {
@@ -26,8 +26,10 @@ void main() {
 
     final agents = await watchTopicJson(backend, Topics.agents)!.first;
     expect(agents.map(Agent.fromJson).map((a) => a.id), contains('a1'));
+    final chats = await watchTopicJson(backend, Topics.chats)!.first;
+    expect(chats.map(AgentChat.fromJson).map((c) => c.id), contains('c1'));
     expect(
-      await watchTopicJson(backend, Topics.messages('a1'))!.first,
+      await watchTopicJson(backend, Topics.messages('c1'))!.first,
       isNotEmpty,
     );
     expect(watchTopicJson(backend, 'bogus'), isNull);

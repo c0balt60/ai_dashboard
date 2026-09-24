@@ -24,6 +24,9 @@ class MockAgentBackend implements AgentBackend {
     for (final a in seed.agents) {
       _agents[a.id] = a;
     }
+    for (final c in seed.chats) {
+      _chats[c.id] = c;
+    }
     for (final t in seed.tasks) {
       _tasks[t.id] = t;
     }
@@ -40,6 +43,7 @@ class MockAgentBackend implements AgentBackend {
 
   final _projects = <String, Project>{};
   final _agents = <String, Agent>{};
+  final _chats = <String, AgentChat>{};
   final _tasks = <String, AgentTask>{};
   final _messages = <String, List<ChatMessage>>{};
   final _todoLists = <String, TodoList>{};
@@ -73,34 +77,88 @@ class MockAgentBackend implements AgentBackend {
       _watch(() => List.unmodifiable(_tasks.values));
 
   @override
-  Stream<List<ChatMessage>> watchMessages(String agentId) =>
-      _watch(() => List.unmodifiable(_messages[agentId] ?? const []));
+  Stream<List<AgentChat>> watchChats() =>
+      _watch(() => List.unmodifiable(_chats.values));
 
   @override
-  Future<void> sendPrompt(String agentId, String text) async {
-    final agent = _agents[agentId];
-    if (agent == null) return;
-    _addMessage(agentId, MessageRole.user, text);
-    _agents[agentId] = agent.copyWith(
+  Stream<List<ChatMessage>> watchMessages(String chatId) =>
+      _watch(() => List.unmodifiable(_messages[chatId] ?? const []));
+
+  @override
+  Future<void> sendPrompt(String chatId, String text) async {
+    final chat = _chats[chatId];
+    final agent = chat == null ? null : _agents[chat.agentId];
+    if (chat == null || agent == null) return;
+    _addMessage(chatId, MessageRole.user, text);
+    final project = _projects[chat.projectId];
+    _agents[agent.id] = agent.copyWith(
       status: AgentStatus.running,
       activity: 'Thinking about: ${_truncate(text, 40)}',
       lastActive: DateTime.now(),
+      projectId: project == null ? null : () => project.id,
+      workingDir: project == null || agent.projectId == project.id
+          ? null
+          : () => project.path,
+      branch: project == null ? null : () => project.branch,
     );
     _notify();
 
     await Future<void>.delayed(latency);
-    final current = _agents[agentId];
+    final current = _agents[agent.id];
     if (current == null || _changes.isClosed) return;
 
-    _addMessage(agentId, MessageRole.agent, _replyTo(current, text));
-    final activeTask = _activeTaskFor(agentId);
-    _agents[agentId] = current.copyWith(
+    _addMessage(chatId, MessageRole.agent, _replyTo(current, chat, text));
+    final activeTask = _activeTaskFor(agent.id);
+    _agents[agent.id] = current.copyWith(
       status: activeTask != null ? AgentStatus.running : AgentStatus.waiting,
       activity: activeTask != null
           ? _nextStepTitle(activeTask)
           : 'Waiting for your next instruction',
       lastActive: DateTime.now(),
     );
+    _notify();
+  }
+
+  @override
+  Future<AgentChat> createChat(
+    String agentId, {
+    String? projectId,
+    String title = '',
+  }) async {
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: projectId,
+      title: title,
+      createdAt: now,
+      updatedAt: now,
+    );
+    if (!_agents.containsKey(agentId)) return chat;
+    _chats[chat.id] = chat;
+    _notify();
+    return chat;
+  }
+
+  @override
+  Future<void> renameChat(String chatId, String title) async {
+    final chat = _chats[chatId];
+    if (chat == null) return;
+    _chats[chatId] = chat.copyWith(title: title);
+    _notify();
+  }
+
+  @override
+  Future<void> deleteChat(String chatId) async {
+    if (_chats[chatId]?.isDefault ?? true) return;
+    _chats.remove(chatId);
+    _messages.remove(chatId);
+    _notify();
+  }
+
+  @override
+  Future<void> clearMessages(String chatId) async {
+    _messages[chatId] = [];
     _notify();
   }
 
@@ -117,9 +175,8 @@ class MockAgentBackend implements AgentBackend {
 
     final previous = _activeTaskFor(agentId);
     if (previous != null && previous.id != taskId) {
-      _tasks[previous.id] = previous.copyWith(
-        state: TaskState.waiting,
-        updatedAt: DateTime.now(),
+      _putTask(
+        previous.copyWith(state: TaskState.waiting, updatedAt: DateTime.now()),
       );
     }
 
@@ -132,10 +189,12 @@ class MockAgentBackend implements AgentBackend {
 
     final task = taskId == null ? null : _tasks[taskId];
     if (task != null) {
-      _tasks[task.id] = task.copyWith(
-        state: TaskState.active,
-        agentId: () => agentId,
-        updatedAt: DateTime.now(),
+      _putTask(
+        task.copyWith(
+          state: TaskState.active,
+          agentId: () => agentId,
+          updatedAt: DateTime.now(),
+        ),
       );
       updated = updated.copyWith(
         status: AgentStatus.running,
@@ -151,14 +210,33 @@ class MockAgentBackend implements AgentBackend {
     }
     _agents[agentId] = updated;
 
-    _addMessage(
-      agentId,
-      MessageRole.system,
-      task == null
-          ? 'Assigned to $workingDir'
-          : 'Assigned to $workingDir · task "${task.title}"',
-    );
+    final chat = _chatFor(agentId, projectId);
+    _addMessage(chat.id, MessageRole.system, 'Assigned to $workingDir');
+    if (task != null) _addMessage(chat.id, MessageRole.user, task.brief);
     _log(projectId, '${agent.name} assigned to $workingDir', agentId: agentId);
+    _notify();
+  }
+
+  @override
+  Future<void> setAgentProjects(String agentId, List<String> projectIds) async {
+    final agent = _agents[agentId];
+    if (agent == null) return;
+    final ids = List<String>.unmodifiable(
+      projectIds.where(_projects.containsKey).toSet(),
+    );
+    for (final id in ids.where((id) => !agent.projectIds.contains(id))) {
+      _log(id, '${agent.name} joined the project', agentId: agentId);
+    }
+    for (final id in agent.projectIds.where((id) => !ids.contains(id))) {
+      _log(id, '${agent.name} left the project', agentId: agentId);
+    }
+    final leaves = agent.projectId != null && !ids.contains(agent.projectId);
+    _agents[agentId] = agent.copyWith(
+      projectIds: ids,
+      projectId: leaves ? () => null : null,
+      workingDir: leaves ? () => null : null,
+      branch: leaves ? () => null : null,
+    );
     _notify();
   }
 
@@ -168,10 +246,12 @@ class MockAgentBackend implements AgentBackend {
     if (agent == null) return;
     final task = _activeTaskFor(agentId);
     if (task != null) {
-      _tasks[task.id] = task.copyWith(
-        state: TaskState.backlog,
-        agentId: () => null,
-        updatedAt: DateTime.now(),
+      _putTask(
+        task.copyWith(
+          state: TaskState.backlog,
+          agentId: () => null,
+          updatedAt: DateTime.now(),
+        ),
       );
     }
     _agents[agentId] = agent.copyWith(
@@ -180,7 +260,13 @@ class MockAgentBackend implements AgentBackend {
       currentTaskId: () => null,
       lastActive: DateTime.now(),
     );
-    _addMessage(agentId, MessageRole.system, 'Stopped by user');
+    _addMessage(
+      agent.projectId == null
+          ? agentId
+          : _chatFor(agentId, agent.projectId!).id,
+      MessageRole.system,
+      'Stopped by user',
+    );
     if (agent.projectId != null) {
       _log(
         agent.projectId!,
@@ -193,29 +279,27 @@ class MockAgentBackend implements AgentBackend {
   }
 
   @override
-  Future<void> clearMessages(String agentId) async {
-    _messages[agentId] = [];
-    _notify();
-  }
-
-  @override
   Future<AgentTask> createTask(
     String title,
     String projectId, {
     String? agentId,
+    String description = '',
+    TodoLink? todo,
   }) async {
     final now = DateTime.now();
     final task = AgentTask(
       id: _nextId('t'),
       title: title,
+      description: description,
       projectId: projectId,
       agentId: agentId,
+      todo: todo,
       state: agentId == null ? TaskState.backlog : TaskState.waiting,
       steps: _defaultSteps(title),
       createdAt: now,
       updatedAt: now,
     );
-    _tasks[task.id] = task;
+    _putTask(task);
     _log(projectId, 'Task created: $title', agentId: agentId);
     _notify();
     return task;
@@ -227,12 +311,14 @@ class MockAgentBackend implements AgentBackend {
     if (task == null) return;
     final now = DateTime.now();
     final done = state == TaskState.completed || state == TaskState.failed;
-    _tasks[taskId] = task.copyWith(
-      state: state,
-      agentId: state == TaskState.backlog ? () => null : null,
-      progress: state == TaskState.completed ? 1 : null,
-      updatedAt: now,
-      completedAt: () => done ? now : null,
+    _putTask(
+      task.copyWith(
+        state: state,
+        agentId: state == TaskState.backlog ? () => null : null,
+        progress: state == TaskState.completed ? 1 : null,
+        updatedAt: now,
+        completedAt: () => done ? now : null,
+      ),
     );
 
     final agent = task.agentId == null ? null : _agents[task.agentId];
@@ -391,7 +477,7 @@ class MockAgentBackend implements AgentBackend {
         steps: _stepsFor(task.steps, progress),
         updatedAt: now,
       );
-      _tasks[task.id] = updated;
+      _putTask(updated);
       _agents[agent.id] = agent.copyWith(
         status: AgentStatus.running,
         activity: _nextStepTitle(updated),
@@ -408,12 +494,14 @@ class MockAgentBackend implements AgentBackend {
 
   void _finishTask(AgentTask task, Agent agent, {required bool failed}) {
     final now = DateTime.now();
-    _tasks[task.id] = task.copyWith(
-      state: failed ? TaskState.failed : TaskState.completed,
-      progress: failed ? task.progress : 1,
-      steps: failed ? task.steps : _stepsFor(task.steps, 1),
-      updatedAt: now,
-      completedAt: () => now,
+    _putTask(
+      task.copyWith(
+        state: failed ? TaskState.failed : TaskState.completed,
+        progress: failed ? task.progress : 1,
+        steps: failed ? task.steps : _stepsFor(task.steps, 1),
+        updatedAt: now,
+        completedAt: () => now,
+      ),
     );
     _agents[agent.id] = agent.copyWith(
       status: failed ? AgentStatus.failed : AgentStatus.completed,
@@ -448,7 +536,7 @@ class MockAgentBackend implements AgentBackend {
       level: failed ? LogLevel.error : LogLevel.success,
     );
     _addMessage(
-      agent.id,
+      _chatFor(agent.id, task.projectId).id,
       MessageRole.agent,
       failed
           ? 'I could not finish "${task.title}": $failCount test(s) still fail. Can you take a look?'
@@ -476,7 +564,7 @@ class MockAgentBackend implements AgentBackend {
 
       final task = waiting.first;
       final project = _projects[task.projectId]!;
-      _tasks[task.id] = task.copyWith(state: TaskState.active, updatedAt: now);
+      _putTask(task.copyWith(state: TaskState.active, updatedAt: now));
       _agents[agent.id] = agent.copyWith(
         status: AgentStatus.running,
         projectId: () => project.id,
@@ -485,6 +573,11 @@ class MockAgentBackend implements AgentBackend {
         currentTaskId: () => task.id,
         activity: _nextStepTitle(task),
         lastActive: now,
+      );
+      _addMessage(
+        _chatFor(agent.id, project.id).id,
+        MessageRole.user,
+        task.brief,
       );
       _log(
         project.id,
@@ -501,15 +594,70 @@ class MockAgentBackend implements AgentBackend {
     return null;
   }
 
-  void _addMessage(String agentId, MessageRole role, String text) {
-    (_messages[agentId] ??= []).add(
+  /// Stores [task] and keeps its linked to-do in step: ticked when the task
+  /// completes, unticked when a completed task is reopened.
+  void _putTask(AgentTask task) {
+    final before = _tasks[task.id];
+    _tasks[task.id] = task;
+    final link = task.todo;
+    final done = task.state == TaskState.completed;
+    if (link == null || (before?.state == TaskState.completed) == done) return;
+    final list = _todoLists[link.listId];
+    final item = list?.items.where((i) => i.id == link.itemId).firstOrNull;
+    if (list == null || item == null || item.done == done) return;
+    final now = DateTime.now();
+    _todoLists[list.id] = list.copyWith(
+      items: [
+        for (final i in list.items)
+          i.id == item.id
+              ? item.copyWith(done: done, completedAt: () => done ? now : null)
+              : i,
+      ],
+      updatedAt: now,
+    );
+  }
+
+  /// The agent's most recent chat in [projectId], started if there is none.
+  AgentChat _chatFor(String agentId, String projectId) {
+    AgentChat? latest;
+    for (final c in _chats.values) {
+      if (c.agentId == agentId &&
+          c.projectId == projectId &&
+          (latest == null || c.updatedAt.isAfter(latest.updatedAt))) {
+        latest = c;
+      }
+    }
+    if (latest != null) return latest;
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: projectId,
+      title: _projects[projectId]?.name ?? '',
+      createdAt: now,
+      updatedAt: now,
+    );
+    return _chats[chat.id] = chat;
+  }
+
+  void _addMessage(String chatId, MessageRole role, String text) {
+    final chat = _chats[chatId];
+    if (chat == null) return;
+    final now = DateTime.now();
+    (_messages[chatId] ??= []).add(
       ChatMessage(
         id: _nextId('m'),
-        agentId: agentId,
+        agentId: chat.agentId,
         role: role,
         text: text,
-        at: DateTime.now(),
+        at: now,
       ),
+    );
+    _chats[chatId] = chat.copyWith(
+      updatedAt: now,
+      title: role == MessageRole.user && chat.title.isEmpty
+          ? _truncate(text, 40)
+          : null,
     );
   }
 
@@ -559,9 +707,12 @@ class MockAgentBackend implements AgentBackend {
     return 'npm test';
   }
 
-  String _replyTo(Agent agent, String prompt) {
+  String _replyTo(Agent agent, AgentChat chat, String prompt) {
     final p = prompt.toLowerCase();
-    final dir = agent.workingDir ?? 'the current folder';
+    final dir =
+        _projects[chat.projectId]?.path ??
+        agent.workingDir ??
+        'a scratch folder';
     final task = _activeTaskFor(agent.id);
     if (p.contains('test')) {
       final n = 20 + _random.nextInt(60);
