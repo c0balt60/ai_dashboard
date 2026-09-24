@@ -482,7 +482,12 @@ class MockSeed {
         'm4',
         'a1',
         MessageRole.agent,
-        'Route and signature verification are in. 3 existing checkout tests are failing — looks unrelated (expired fixture card). Fixing those next.',
+        '**Route and signature verification are in.**\n\n'
+            '- Added `POST /webhooks/stripe` in `src/routes/webhooks.ts`\n'
+            '- Signatures are checked with `STRIPE_WEBHOOK_SECRET` from `.env`\n'
+            '- `checkout.session.completed` marks the order as paid\n\n'
+            '3 existing checkout tests are failing — looks unrelated '
+            '(expired fixture card). Fixing those next.',
         _ago(minutes: 35),
       ),
     ],
@@ -530,7 +535,16 @@ class MockSeed {
         'm10',
         'a4',
         MessageRole.agent,
-        'After 4 attempts, 3 tests still fail. test_extract_dates depends on the local timezone. I need guidance: pin TZ in CI or rewrite the fixture?',
+        'After 4 attempts, 3 tests still fail. `test_extract_dates` '
+            'depends on the local timezone:\n\n'
+            '```python\n'
+            'assert extract_dates(row)[0] == date(2024, 3, 10)  # fails outside UTC\n'
+            '```\n\n'
+            '| Option | Change | Risk |\n'
+            '|---|---|---|\n'
+            '| Pin TZ | `TZ=UTC` in CI | Hides real bugs |\n'
+            '| Rewrite fixture | Use aware datetimes | Bigger diff |\n\n'
+            'I need guidance: **pin TZ in CI** or **rewrite the fixture**?',
         _ago(minutes: 20),
       ),
     ],
