@@ -3,8 +3,9 @@
 # updates from. Build-only bumps (same x.y.z) don't release again.
 #
 # Needs these repository secrets (see android/key.properties.example):
-#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
-#   ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS
+# and ANDROID_KEY_PASSWORD only for an old JKS keystore whose key has its own
+# password; PKCS12 keystores (keytool's default) use the store password.
 name: Android release
 
 on:
@@ -90,8 +91,8 @@ jobs:
           {
             echo "storeFile=$RUNNER_TEMP/upload.jks"
             echo "storePassword=$KEYSTORE_PASSWORD"
-            echo "keyPassword=$KEY_PASSWORD"
-            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+            echo "keyAlias=${KEY_ALIAS:-upload}"
           } > android/key.properties
 
       - run: flutter build apk --release --split-per-abi
