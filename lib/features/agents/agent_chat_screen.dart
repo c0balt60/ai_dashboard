@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
@@ -371,11 +372,7 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                 child: AsyncValueView(
                   messagesAsync,
                   data: (messages) => messages.isEmpty
-                      ? _Greeting(
-                          agent: agent,
-                          project: project,
-                          onSend: _send,
-                        )
+                      ? _Greeting(agent: agent, project: project, onSend: _send)
                       : _MessageList(
                           agent: agent,
                           messages: messages,
