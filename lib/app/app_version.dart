@@ -4,4 +4,4 @@
 library;
 
 const appVersion = '1.1.0';
-const appBuildNumber = 5;
+const appBuildNumber = 6;
