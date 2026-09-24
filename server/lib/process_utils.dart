@@ -9,7 +9,10 @@ import 'package:path/path.dart' as p;
 /// `Process.start` can't launch on its own.
 typedef Launch = ({String executable, bool runInShell});
 
-Future<Launch> resolveLaunch(String name) async {
+/// Finds [name] the way the shell would. Returns null on Windows when it
+/// isn't on the PATH, so callers can explain that instead of passing on
+/// cmd.exe's "is not recognized" message.
+Future<Launch?> resolveLaunch(String name) async {
   if (!Platform.isWindows) return (executable: name, runInShell: false);
   bool isBatch(String ext) => ext == '.cmd' || ext == '.bat';
 
@@ -32,8 +35,12 @@ Future<Launch> resolveLaunch(String name) async {
       }
     }
   }
-  return (executable: name, runInShell: true);
+  return null;
 }
+
+String notFoundMessage(String executable) =>
+    "Can't find $executable on this PC's PATH. Install its CLI, or set "
+    '"executable" for this agent in server/config.json to its full path.';
 
 /// Kills [process] and, on Windows, every child it spawned.
 Future<void> killTree(Process process) async {

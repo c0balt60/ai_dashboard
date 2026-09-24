@@ -131,6 +131,28 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  test(
+    'a CLI missing from the PATH fails the turn with a clear message',
+    () async {
+      final runner = ClaudeCodeRunner(
+        const AgentConfig(
+          id: 'x',
+          name: 'X',
+          type: AgentType.claudeCode,
+          executable: 'definitely-not-a-real-cli-123',
+        ),
+      );
+      final events = await runner
+          .start(prompt: 'hi', workingDir: Directory.current.path)
+          .events
+          .toList();
+      final finished = events.single as FinishedEvent;
+      expect(finished.success, isFalse);
+      expect(finished.error, contains("Can't find definitely-not-a-real-cli"));
+    },
+    skip: Platform.isWindows ? false : 'PATH lookup only runs on Windows',
+  );
+
   test('a missing CLI fails the turn instead of throwing', () async {
     final runner = ClaudeCodeRunner(
       const AgentConfig(

@@ -139,6 +139,12 @@ abstract class CliRunner implements AgentRunner {
             ..writeAsStringSync(prompt);
         }
         final launch = await resolveLaunch(executable);
+        if (launch == null) {
+          emit(
+            FinishedEvent(success: false, error: notFoundMessage(executable)),
+          );
+          return;
+        }
         final started = await Process.start(
           launch.executable,
           argsFor(sessionId: sessionId, promptFile: promptFile?.path),

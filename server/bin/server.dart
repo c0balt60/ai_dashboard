@@ -14,6 +14,8 @@ import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard_server/api.dart';
 import 'package:ai_dashboard_server/config.dart';
 import 'package:ai_dashboard_server/local_backend.dart';
+import 'package:ai_dashboard_server/process_utils.dart';
+import 'package:ai_dashboard_server/runners/agent_runner.dart';
 import 'package:args/args.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -64,7 +66,15 @@ Future<void> main(List<String> args) async {
     '${DateTime.now().toIso8601String()}  Agent dashboard server on http://${server.address.host}:${server.port}'
     '${simulate ? ' (simulated agents)' : ''}',
   );
-  if (!simulate) _out.writeln('State is kept in ${config.dataDir}');
+  if (!simulate) {
+    _out.writeln('State is kept in ${config.dataDir}');
+    for (final agent in config.agents) {
+      if (AgentRunner.forConfig(agent) case CliRunner(:final executable)
+          when await resolveLaunch(executable) == null) {
+        _out.writeln('Warning: ${agent.name}: ${notFoundMessage(executable)}');
+      }
+    }
+  }
   if (config.webRoot == null || !Directory(config.webRoot!).existsSync()) {
     _out.writeln('No built web app found: serving the API only.');
   }
