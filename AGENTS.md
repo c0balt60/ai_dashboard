@@ -96,6 +96,7 @@ tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart toge
 - **Comments:** only file- and class-level doc comments, plus comments on genuinely tricky logic. No section-divider comments and no per-field or obvious comments.
 - **Commits:** split work into several logical commits (dependencies, then data layer, then shared widgets, then each feature, then tests). Never dump everything into one commit, and don't commit straight to `main`; use a feature branch.
 - **Versioning:** every change set bumps the version, which shows in Settings > About. Pick `major`, `minor`, `patch` or `build` as described in `VERSIONING.md`, run `tool/bump_version.dart`, and commit the bump on its own as the last commit (`Bump version to X.Y.Z`). Never edit the version by hand.
+- **Releases:** when a new `major.minor.patch` reaches `main`, `.github/workflows/android-release.yml` tests the app, builds signed APKs and publishes them as the GitHub release `vX.Y.Z`, which the phone updates from. `build` bumps don't create a release.
 - Match the surrounding code style. Run `dart format` before committing.
 - **Secrets:** never commit API keys or tokens. The server token lives in the gitignored `server/config.json` (or `AI_DASHBOARD_TOKEN`); the app stores it from Settings. The Android keystore and `android/key.properties` are gitignored too.
 
