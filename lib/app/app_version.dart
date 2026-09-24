@@ -3,5 +3,5 @@
 /// See VERSIONING.md.
 library;
 
-const appVersion = '1.1.0';
-const appBuildNumber = 6;
+const appVersion = '1.1.1';
+const appBuildNumber = 7;
