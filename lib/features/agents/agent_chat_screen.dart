@@ -18,6 +18,7 @@ import '../../widgets/sheets/assign_agent_sheet.dart';
 import '../../widgets/status/agent_avatar.dart';
 import '../../widgets/status/status_badge.dart';
 import '../../widgets/status/status_visuals.dart';
+import 'chat_markdown.dart';
 
 const _chatMaxWidth = 820.0;
 
@@ -682,12 +683,15 @@ class _MessageBubble extends StatelessWidget {
               spacing: 8,
               runSpacing: 2,
               children: [
-                Text(
-                  message.text,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: foreground,
-                  ),
-                ),
+                if (isUser)
+                  Text(
+                    message.text,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foreground,
+                    ),
+                  )
+                else
+                  ChatMarkdown(message.text, color: foreground),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
