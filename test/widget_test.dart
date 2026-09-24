@@ -94,10 +94,12 @@ Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   expect(find.text('Ship the lists'), findsOneWidget);
 }
 
-/// Waits for a pushed chat route to animate in, then gives the message
-/// stream, which subscribes once the screen is built, a frame to arrive.
+/// Waits for a pushed chat route to animate in, then gives its streams a
+/// frame each: the chats resolve which chat to show, and only then does its
+/// message stream subscribe.
 Future<void> _pumpChat(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 500));
+  await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 100));
 }
 
@@ -153,7 +155,7 @@ void main() {
   ) async {
     await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
     await tester.tap(find.text('Ask an agent…'));
-    await tester.pump(const Duration(milliseconds: 500));
+    await _pumpChat(tester);
     expect(find.byType(AgentChatScreen), findsOneWidget);
 
     // An empty chat greets the owner with suggestions instead of bubbles.
@@ -245,9 +247,7 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byType(App)),
     );
-    container
-        .read(routerProvider)
-        .push(AppRoutes.agent('a5', projectId: 'p3'));
+    container.read(routerProvider).push(AppRoutes.agent('a5', projectId: 'p3'));
     await _pumpChat(tester);
     expect(find.textContaining('in portfolio-site?'), findsOneWidget);
 
