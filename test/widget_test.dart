@@ -75,8 +75,9 @@ Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   expect(find.byType(TodoListsView), findsOneWidget);
 
   router.push(AppRoutes.agent('a1'));
-  await tester.pump(const Duration(milliseconds: 500));
+  await _pumpChat(tester);
   expect(find.byType(AgentChatScreen), findsOneWidget);
+  expect(find.textContaining('Route and signature'), findsOneWidget);
 
   router.push(AppRoutes.project('p2'));
   await tester.pump(const Duration(milliseconds: 500));
@@ -91,6 +92,13 @@ Future<void> _visitEverything(WidgetTester tester, Type navigation) async {
   await tester.pump(const Duration(milliseconds: 500));
   expect(find.byType(NewTaskScreen), findsOneWidget);
   expect(find.text('Ship the lists'), findsOneWidget);
+}
+
+/// Waits for a pushed chat route to animate in, then gives the message
+/// stream, which subscribes once the screen is built, a frame to arrive.
+Future<void> _pumpChat(WidgetTester tester) async {
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pump(const Duration(milliseconds: 100));
 }
 
 /// MaterialApp animates theme changes: one frame starts the animation, the
@@ -156,6 +164,21 @@ void main() {
     await container.read(backendProvider).clearMessages(agentId);
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('Good to see you again'), findsOneWidget);
+  });
+
+  testWidgets('agent replies render Markdown without overflowing a phone', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .push(AppRoutes.agent('a4'));
+    await _pumpChat(tester);
+
+    expect(find.byType(Table), findsOneWidget);
+    expect(find.textContaining('Hides real bugs'), findsOneWidget);
+    expect(find.textContaining('**'), findsNothing);
+    expect(find.textContaining('```'), findsNothing);
   });
 
   testWidgets('new task page creates a queued task for the chosen agent', (
