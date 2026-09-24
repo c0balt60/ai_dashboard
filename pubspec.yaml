@@ -42,6 +42,7 @@ dependencies:
   http: ^1.6.0
   web_socket_channel: ^3.0.3
   shared_preferences: ^2.5.5
+  flutter_markdown_plus: ^1.0.12
 
 dev_dependencies:
   flutter_test:
