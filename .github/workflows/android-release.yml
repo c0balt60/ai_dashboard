@@ -87,7 +87,12 @@ jobs:
             echo "::error::Add the ANDROID_* signing secrets to the repository first."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          # Tolerate line breaks or spaces picked up when the secret was set.
+          if ! printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' \
+              | base64 --decode > "$RUNNER_TEMP/upload.jks" 2> /dev/null; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 must be the .jks file encoded as base64, not a password. See android/key.properties.example."
+            exit 1
+          fi
           {
             echo "storeFile=$RUNNER_TEMP/upload.jks"
             echo "storePassword=$KEYSTORE_PASSWORD"

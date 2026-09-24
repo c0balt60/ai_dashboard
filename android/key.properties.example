@@ -3,8 +3,11 @@
 #   keytool -genkey -v -keystore C:/Users/you/keys/ai_dashboard.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 # The keystore uses one password for both entries below. Use forward slashes
 # in storeFile: a backslash is an escape character in .properties files.
-# CI signs with the same key from the ANDROID_* repository secrets, so keep a
-# backup: an app signed with a lost key can never be updated, only reinstalled.
+# CI signs with the same key from repository secrets. Set them with:
+#   gh secret set ANDROID_KEYSTORE_BASE64 --body ([Convert]::ToBase64String([IO.File]::ReadAllBytes("C:/Users/you/keys/ai_dashboard.jks")))
+#   gh secret set ANDROID_KEYSTORE_PASSWORD
+# Keep a backup of the keystore: an app signed with a lost key can never be
+# updated, only reinstalled.
 storePassword=
 keyPassword=
 keyAlias=upload
