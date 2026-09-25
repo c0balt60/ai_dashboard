@@ -40,6 +40,22 @@ void main() {
     for (final l in seed.todoLists) {
       expectRoundTrip(l, (v) => v.toJson(), TodoList.fromJson);
     }
+    expectRoundTrip(
+      const PushDevice(
+        token: 'fcm-token',
+        events: {PushEvent.failed, PushEvent.replied},
+      ),
+      (v) => v.toJson(),
+      PushDevice.fromJson,
+    );
+  });
+
+  test('push devices skip events this version does not know', () {
+    final device = PushDevice.fromJson({
+      'token': 't',
+      'events': ['failed', 'somethingNew'],
+    });
+    expect(device.events, {PushEvent.failed});
   });
 
   test('agents and tasks saved by older versions still load', () {

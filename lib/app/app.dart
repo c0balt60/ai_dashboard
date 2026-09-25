@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/push_provider.dart';
 import '../providers/settings_provider.dart';
 import 'router.dart';
 import 'theme.dart';
@@ -15,6 +16,8 @@ class App extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keeps this phone's push registration in step with the settings.
+    ref.listen(pushProvider, (_, _) {});
     final themeMode = ref.watch(settingsProvider.select((s) => s.themeMode));
     return MaterialApp.router(
       title: 'Agent Dashboard',

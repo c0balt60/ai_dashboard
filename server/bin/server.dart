@@ -15,6 +15,8 @@ import 'package:ai_dashboard_server/api.dart';
 import 'package:ai_dashboard_server/config.dart';
 import 'package:ai_dashboard_server/local_backend.dart';
 import 'package:ai_dashboard_server/process_utils.dart';
+import 'package:ai_dashboard_server/push/fcm_sender.dart';
+import 'package:ai_dashboard_server/push/push_notifier.dart';
 import 'package:ai_dashboard_server/runners/agent_runner.dart';
 import 'package:args/args.dart';
 import 'package:shelf/shelf.dart';
@@ -51,6 +53,23 @@ Future<void> main(List<String> args) async {
       ? MockAgentBackend()
       : LocalAgentBackend(config);
 
+  FcmSender? sender;
+  String? pushWarning;
+  if (config.firebaseServiceAccount case final key?) {
+    try {
+      sender = FcmSender.fromFile(key);
+    } on FormatException catch (e) {
+      pushWarning = e.message;
+    }
+  }
+  final push = PushNotifier(
+    backend,
+    dataDir: config.dataDir,
+    sender: sender,
+    log: (message) =>
+        _out.writeln('${DateTime.now().toIso8601String()}  $message'),
+  );
+
   final handler = const Pipeline()
       .addMiddleware(_logRequests)
       .addHandler(
@@ -59,6 +78,7 @@ Future<void> main(List<String> args) async {
           token: config.token,
           webRoot: config.webRoot,
           corsOrigins: config.corsOrigins,
+          push: push,
         ),
       );
   final server = await shelf_io.serve(handler, config.host, config.port);
@@ -75,11 +95,19 @@ Future<void> main(List<String> args) async {
       }
     }
   }
+  _out.writeln(switch ((sender, pushWarning)) {
+    (FcmSender(:final projectId), _) =>
+      'Push notifications go through Firebase project $projectId.',
+    (_, final warning?) => 'Warning: push notifications are off: $warning',
+    _ =>
+      'Push notifications are off: set firebaseServiceAccount to enable them.',
+  });
   if (config.webRoot == null || !Directory(config.webRoot!).existsSync()) {
     _out.writeln('No built web app found: serving the API only.');
   }
 
   Future<void> shutdown(ProcessSignal _) async {
+    push.dispose();
     backend.dispose();
     await server.close(force: true);
     await _out.flush();

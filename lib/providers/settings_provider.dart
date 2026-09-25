@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/models/models.dart';
 import 'backend_providers.dart';
 
 /// Where the app gets its data: the built-in demo data or the PC server.
@@ -18,8 +19,7 @@ class AppSettings {
     this.serverUrl = '',
     this.authToken = '',
     this.simulate = true,
-    this.notifyOnFailure = true,
-    this.notifyOnComplete = false,
+    this.notifyOn = const {PushEvent.failed, PushEvent.replied},
   });
 
   /// The defaults for a fresh install. A release web build is normally served
@@ -36,8 +36,9 @@ class AppSettings {
   final String serverUrl;
   final String authToken;
   final bool simulate;
-  final bool notifyOnFailure;
-  final bool notifyOnComplete;
+
+  /// What the PC should send this phone push notifications about.
+  final Set<PushEvent> notifyOn;
 
   AppSettings copyWith({
     ThemeMode? themeMode,
@@ -45,8 +46,7 @@ class AppSettings {
     String? serverUrl,
     String? authToken,
     bool? simulate,
-    bool? notifyOnFailure,
-    bool? notifyOnComplete,
+    Set<PushEvent>? notifyOn,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -54,8 +54,7 @@ class AppSettings {
       serverUrl: serverUrl ?? this.serverUrl,
       authToken: authToken ?? this.authToken,
       simulate: simulate ?? this.simulate,
-      notifyOnFailure: notifyOnFailure ?? this.notifyOnFailure,
-      notifyOnComplete: notifyOnComplete ?? this.notifyOnComplete,
+      notifyOn: notifyOn ?? this.notifyOn,
     );
   }
 }
@@ -74,6 +73,14 @@ bool isValidServerUrl(String url) {
 
 class SettingsNotifier extends Notifier<AppSettings> {
   static const _prefix = 'settings.';
+
+  /// One flag per event, named after the toggles that predate push.
+  static const _notifyKeys = {
+    PushEvent.failed: 'notifyOnFailure',
+    PushEvent.completed: 'notifyOnComplete',
+    PushEvent.replied: 'notifyOnReply',
+    PushEvent.waiting: 'notifyOnWaiting',
+  };
 
   SharedPreferences? get _prefs => ref.read(sharedPreferencesProvider);
 
@@ -96,12 +103,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
       serverUrl: prefs.getString('${_prefix}serverUrl') ?? defaults.serverUrl,
       authToken: prefs.getString('${_prefix}authToken') ?? defaults.authToken,
       simulate: prefs.getBool('${_prefix}simulate') ?? defaults.simulate,
-      notifyOnFailure:
-          prefs.getBool('${_prefix}notifyOnFailure') ??
-          defaults.notifyOnFailure,
-      notifyOnComplete:
-          prefs.getBool('${_prefix}notifyOnComplete') ??
-          defaults.notifyOnComplete,
+      notifyOn: {
+        for (final event in PushEvent.values)
+          if (prefs.getBool('$_prefix${_notifyKeys[event]}') ??
+              defaults.notifyOn.contains(event))
+            event,
+      },
     );
   }
 
@@ -156,14 +163,13 @@ class SettingsNotifier extends Notifier<AppSettings> {
     _save('simulate', value);
   }
 
-  void setNotifyOnFailure(bool value) {
-    state = state.copyWith(notifyOnFailure: value);
-    _save('notifyOnFailure', value);
-  }
-
-  void setNotifyOnComplete(bool value) {
-    state = state.copyWith(notifyOnComplete: value);
-    _save('notifyOnComplete', value);
+  void setNotify(PushEvent event, bool value) {
+    state = state.copyWith(
+      notifyOn: value
+          ? {...state.notifyOn, event}
+          : state.notifyOn.difference({event}),
+    );
+    _save(_notifyKeys[event]!, value);
   }
 }
 
