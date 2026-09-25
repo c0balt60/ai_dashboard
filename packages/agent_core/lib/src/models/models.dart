@@ -6,5 +6,6 @@ export 'enums.dart';
 export 'json.dart' show Json;
 export 'log_entry.dart';
 export 'project.dart';
+export 'push_device.dart';
 export 'test_run.dart';
 export 'todo_list.dart';

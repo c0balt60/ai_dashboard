@@ -40,6 +40,11 @@ abstract final class ApiPaths {
 
   static String runCommand(String projectId) =>
       '/api/projects/$projectId/commands';
+
+  /// Registers a [PushDevice]; an empty event set unregisters it. Tokens
+  /// travel in the body so they never reach the request log.
+  static const pushDevice = '/api/push/device';
+  static const pushTest = '/api/push/test';
 }
 
 /// Names of the streams a client can subscribe to.
