@@ -374,6 +374,20 @@ class HttpAgentBackend implements AgentBackend {
     return watch.elapsed;
   }
 
+  /// Registers this phone for push notifications, or unregisters it when
+  /// [PushDevice.events] is empty. Returns whether the PC can send any.
+  Future<bool> registerPushDevice(PushDevice device) async {
+    final json = await _request(
+      'PUT',
+      ApiPaths.pushDevice,
+      body: device.toJson(),
+    );
+    return json['enabled'] as bool? ?? false;
+  }
+
+  Future<void> sendTestPush(String token) =>
+      _request('POST', ApiPaths.pushTest, body: {'token': token});
+
   /// Only has an effect when the server runs with `--simulate`.
   @override
   void setSimulationEnabled(bool enabled) {
