@@ -3,16 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_version.dart';
 import '../../providers/backend_providers.dart';
+import '../../providers/push_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
 import '../../widgets/status/status_dot.dart';
 import '../../widgets/status/status_visuals.dart';
+import 'push_settings.dart';
 
-/// Settings tab: PC connection, simulation, appearance and notifications,
-/// each grouped in its own rounded card. Wide screens split the cards into
-/// two independent columns.
+/// Settings tab: PC connection, simulation, appearance and (on Android)
+/// notifications, each grouped in its own rounded card. Wide screens split
+/// the cards into two independent columns.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -318,30 +320,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
 
-    final notifications = _SettingsSection(
+    const notifications = _SettingsSection(
       title: 'Notifications',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          children: [
-            SwitchListTile(
-              secondary: const Icon(Icons.error_outline),
-              title: const Text('Agent or task failed'),
-              subtitle: const Text('Push notifications are not wired up yet'),
-              value: settings.notifyOnFailure,
-              onChanged: notifier.setNotifyOnFailure,
-            ),
-            const Divider(height: 1, indent: 72, endIndent: 16),
-            SwitchListTile(
-              secondary: const Icon(Icons.task_alt),
-              title: const Text('Task completed'),
-              subtitle: const Text('Push notifications are not wired up yet'),
-              value: settings.notifyOnComplete,
-              onChanged: notifier.setNotifyOnComplete,
-            ),
-          ],
-        ),
-      ),
+      child: PushSettings(),
     );
 
     const about = _SettingsSection(
@@ -372,7 +353,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       server,
                       if (!isServer) simulation,
                       appearance,
-                      notifications,
+                      if (pushSupported) notifications,
                       about,
                     ],
                   );
@@ -394,7 +375,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (!isServer) simulation,
-                          notifications,
+                          if (pushSupported) notifications,
                           about,
                         ],
                       ),
