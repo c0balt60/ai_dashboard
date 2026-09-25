@@ -134,4 +134,23 @@ void main() {
     );
     expect(missingApi.statusCode, 404);
   });
+
+  test('phones can register for push even when the PC cannot send', () async {
+    final registered = await http.put(
+      base.resolve(ApiPaths.pushDevice),
+      headers: auth(),
+      body: jsonEncode(
+        const PushDevice(token: 'fcm', events: {PushEvent.failed}).toJson(),
+      ),
+    );
+    expect(registered.statusCode, 200);
+    expect(jsonDecode(registered.body), {'enabled': false});
+
+    final test = await http.post(
+      base.resolve(ApiPaths.pushTest),
+      headers: auth(),
+      body: jsonEncode({'token': 'fcm'}),
+    );
+    expect(test.statusCode, HttpStatus.serviceUnavailable);
+  });
 }

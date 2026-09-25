@@ -6,6 +6,7 @@
   "corsOrigins": [],
   "commandTimeoutSeconds": 120,
   "shell": [],
+  "firebaseServiceAccount": "firebase-service-account.json",
   "projects": [
     {
       "name": "ai_dashboard",

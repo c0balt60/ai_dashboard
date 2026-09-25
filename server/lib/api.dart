@@ -10,18 +10,23 @@ import 'package:shelf_static/shelf_static.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'push/push_notifier.dart';
+
 /// The server's HTTP entry point.
 ///
 /// Exposes [backend] under `/api` as described in `protocol.dart`, guarded by
 /// [token], and serves the built web app from [webRoot] for every other path,
 /// falling back to `index.html` so the app's path URLs survive a reload.
+/// Phones register for notifications with [push]; without it they are told
+/// the PC can't send any.
 Handler buildHandler(
   AgentBackend backend, {
   required String token,
   String? webRoot,
   List<String> corsOrigins = const [],
+  PushNotifier? push,
 }) {
-  final api = _apiRouter(backend);
+  final api = _apiRouter(backend, push);
   final socket = webSocketHandler(
     (WebSocketChannel channel, String? _) => _serveSocket(backend, channel),
     pingInterval: const Duration(seconds: 20),
@@ -48,7 +53,7 @@ Handler buildHandler(
   };
 }
 
-Router _apiRouter(AgentBackend backend) {
+Router _apiRouter(AgentBackend backend, PushNotifier? push) {
   Future<Response> action(
     Request request,
     FutureOr<Object?> Function(Json body) run,
@@ -205,7 +210,22 @@ Router _apiRouter(AgentBackend backend) {
         final output = await backend.runCommand(id, b['command'] as String);
         return {'output': output};
       }),
-    );
+    )
+    ..put(
+      ApiPaths.pushDevice,
+      (Request r) => action(r, (b) {
+        push?.register(PushDevice.fromJson(b));
+        return {'enabled': push?.canSend ?? false};
+      }),
+    )
+    ..post(ApiPaths.pushTest, (Request r) {
+      if (push == null || !push.canSend) {
+        return _json({
+          'error': PushNotifier.notConfiguredMessage,
+        }, status: HttpStatus.serviceUnavailable);
+      }
+      return action(r, (b) => push.sendTest(b['token'] as String));
+    });
 }
 
 /// Serves one WebSocket client: each subscribed topic streams snapshots until

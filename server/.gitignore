@@ -3,3 +3,5 @@ config.json
 .dart_tool/
 *.exe
 server.log
+# Firebase service-account key for push notifications.
+firebase-service-account.json

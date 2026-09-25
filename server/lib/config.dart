@@ -21,6 +21,7 @@ class ServerConfig {
     this.shell = const [],
     this.projects = const [],
     this.agents = const [],
+    this.firebaseServiceAccount,
   });
 
   factory ServerConfig.load(String path) {
@@ -57,6 +58,10 @@ class ServerConfig {
         _ => _defaultDataDir(),
       },
       corsOrigins: decodeStrings(json['corsOrigins']),
+      firebaseServiceAccount: switch (json['firebaseServiceAccount']) {
+        final String path => resolve(path),
+        _ => null,
+      },
       commandTimeout: Duration(
         seconds: json['commandTimeoutSeconds'] as int? ?? 120,
       ),
@@ -96,6 +101,10 @@ class ServerConfig {
 
   final List<ProjectConfig> projects;
   final List<AgentConfig> agents;
+
+  /// The Firebase service-account key the server sends push notifications
+  /// with, or null to send none. Keep it out of git like this file.
+  final String? firebaseServiceAccount;
 
   static String _defaultDataDir() {
     final env = Platform.environment;
