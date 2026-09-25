@@ -26,7 +26,7 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 | Tasks | `/tasks` (tab) | Two views picked by chips under the header. **Agent queue:** grouped as Active, Waiting, Backlog, Done (kanban columns on wide screens); cards read like "(Codex) Implement X · in project"; task details sheet. **My lists:** the user's own to-do lists (`TodoList`/`TodoItem`) with progress, timeline and overdue count. The FAB follows the view (New task / New list) |
 | New Task | `/new-task?project=&title=&notes=&agent=&list=&item=` (full screen, all optional) | Assistant-style page: greeting, template chips and a suggest chip, and a composer card whose text becomes the task title, a notes field (the task `description`), and project and agent dropdown buttons (`MenuAnchor`) inside it (no agent means backlog). Opened from the Tasks FAB, the dashboard "+" and a to-do's "send to agent", which prefills it and links the task to the to-do (`list`/`item` → `TodoLink`) |
 | To-do list | `/list/:id` (full screen) | Open items soonest due first, collapsible Done. Items are tagged with projects and agents, have an optional start and due date, and can be handed off as a prefilled agent task, whose state then shows on the item. Rename, clear done, delete |
-| Settings | `/settings` (tab) | Demo data / My PC switch, PC URL and access token, live connection status and test, simulation toggle (demo only), theme, notification toggles (not wired up yet). Everything is saved with shared_preferences |
+| Settings | `/settings` (tab) | Demo data / My PC switch, PC URL and access token, live connection status and test, simulation toggle (demo only), theme, and on Android only push notification status, per-event toggles and a test button. Everything is saved with shared_preferences |
 
 **Agent status system:** `running`, `waiting`, `completed`, `failed` and `idle`. Every status, task-state, test, log, to-do due-date and PC-connection visual comes from `lib/widgets/status/status_visuals.dart`, so reuse `StatusDot`, `StatusBadge` and `AgentAvatar` instead of restyling them per screen.
 
@@ -34,13 +34,14 @@ A **mobile-first Flutter app (Android is the primary target)** for monitoring an
 
 ```
 packages/agent_core/        pure Dart, shared by app and server: models (with toJson/fromJson), the AgentBackend contract, MockAgentBackend + seed, protocol.dart (ApiPaths, Topics, WebSocket frames)
-server/                     the PC server (shelf): bin/server.dart · lib/api.dart (REST + WebSocket + static web app) · local_backend.dart (real agents, state.json persistence) · runners/ (Claude Code, Codex, Gemini CLI, Aider) · process_utils.dart (runShell, git branch) · config.dart · tool/install_task.ps1 (autostart at log on)
+server/                     the PC server (shelf): bin/server.dart · lib/api.dart (REST + WebSocket + static web app) · local_backend.dart (real agents, state.json persistence) · runners/ (Claude Code, Codex, Gemini CLI, Aider) · push/ (PushNotifier, FcmSender) · process_utils.dart (runShell, git branch) · config.dart · tool/install_task.ps1 (autostart at log on)
 lib/
   main.dart                 loads SharedPreferences, shows stray BackendExceptions as snackbars, ProviderScope(child: App())
   app/                      app.dart (MaterialApp.router) · app_version.dart (version shown in About) · router.dart (go_router + AppRoutes) · shell_scaffold.dart (bottom NavigationBar, side rail from 840dp) · theme.dart (M3 light/dark + StatusColors and AppSurfaces ThemeExtensions)
   data/models/models.dart   re-exports package:agent_core/models.dart
   data/backend/             http_backend.dart (HttpAgentBackend, ConnectionStatus, BackendException) · socket_connect*.dart (WebSocket with native pings)
-  providers/                backend_providers.dart (streams + derived views) · settings_provider.dart
+  data/push/                push_messaging.dart (PushMessaging, FirebasePushMessaging)
+  providers/                backend_providers.dart (streams + derived views) · settings_provider.dart · push_provider.dart (PushController)
   widgets/                  shared cards (AgentCard, TaskCard, ProjectCard), common.dart (SectionHeader, EmptyState, AsyncValueView, StatTile, InfoChip)
                             page.dart (AppPage, PageHeader, HeaderAction, ThemeToggleButton) · layout.dart (Breakpoints, AppBackdrop, ContentWidth, ResponsiveGrid) · prompt_bar.dart (AiOrb, PromptBarFrame, PromptGreeting, SuggestionPill, submitOnEnter) · glow.dart (FloatingGlow, BottomHaze)
   widgets/status/           status system (see above)
@@ -61,6 +62,10 @@ tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart toge
 - **`MockAgentBackend`** keeps state in memory. A `Timer.periodic` tick (every 3s) moves tasks forward, completes or fails them, promotes waiting tasks and adds test runs. Prompts get canned replies after `latency`. `simulate: false, latency: Duration.zero` makes it deterministic for tests.
 - **Wire protocol** (`protocol.dart`): actions are JSON requests under `/api` with `Authorization: Bearer <token>`; streams are topics on one WebSocket at `/api/ws` (token in the `token` query parameter), answered with full snapshots. `HttpAgentBackend` reconnects with backoff and re-subscribes.
 - **`LocalAgentBackend`** (server): agents and projects come from `server/config.json`. One turn per agent at a time, each a CLI process with the prompt on stdin, in the chat's project folder (the default chat uses the agent's current folder, or a `scratch` folder in the data dir). Each chat keeps its CLI session id and the folder it belongs to, so the next turn in that chat resumes it. Tasks queued for an agent start when it is free, in its latest chat for the task's project, and a finished task runs the project's `testCommand`. `runCommand` goes through PowerShell `-EncodedCommand` on Windows. State persists to `state.json` in the data dir.
+- **Push notifications** (Android only, FCM):
+  - `pushProvider` (kept alive by `App`) sends the PC a `PushDevice` (FCM token plus the `PushEvent`s in `AppSettings.notifyOn`) via `PUT /api/push/device` each time the link comes up, the toggles change or the token rotates. An empty event set unregisters the phone. Tapping a notification pushes the route that `PushController.routeFor` builds from its `agentId`/`chatId`/`projectId` data. While the app is open, a notification shows as a snackbar instead.
+  - The server's `PushNotifier` compares the agent and task snapshots of any backend, so `--simulate` works too. It waits `settle` (3s) per agent, then sends each device the first `PushEvent` it asked for, in enum order (failed, completed, replied, waiting). Only tasks that were `active` count, so moving a task by hand doesn't notify. Devices are stored in `push.json` in the data dir.
+  - Setup: the Firebase `android/app/google-services.json` (gitignored; CI writes it from the `GOOGLE_SERVICES_JSON` secret, and without it the Google Services plugin is skipped and push is off) and a service-account key set as `firebaseServiceAccount` in `server/config.json` (gitignored as `server/firebase-service-account.json`). The channel id `agent_updates` must match in `MainActivity.kt`, `AndroidManifest.xml` and `FcmSender.channelId`.
 
 ### Navigation
 - The five tabs sit in a `StatefulShellRoute.indexedStack`, so each tab keeps its own back stack.
@@ -100,7 +105,7 @@ tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart toge
 - **Versioning:** every change set bumps the version, which shows in Settings > About. Pick `major`, `minor`, `patch` or `build` as described in `VERSIONING.md`, run `tool/bump_version.dart`, and commit the bump on its own as the last commit (`Bump version to X.Y.Z`). Never edit the version by hand.
 - **Releases:** when a new `major.minor.patch` reaches `main`, `.github/workflows/android-release.yml` tests the app, builds signed APKs and publishes them as the GitHub release `vX.Y.Z`, which the phone updates from. `build` bumps don't create a release.
 - Match the surrounding code style. Run `dart format` before committing.
-- **Secrets:** never commit API keys or tokens. The server token lives in the gitignored `server/config.json` (or `AI_DASHBOARD_TOKEN`); the app stores it from Settings. The Android keystore and `android/key.properties` are gitignored too.
+- **Secrets:** never commit API keys or tokens. The server token lives in the gitignored `server/config.json` (or `AI_DASHBOARD_TOKEN`); the app stores it from Settings. The Android keystore, `android/key.properties`, `android/app/google-services.json` and `server/firebase-service-account.json` are gitignored too.
 
 ## Commands
 
@@ -126,8 +131,8 @@ Only build an APK when asked: `flutter.bat build apk --release --split-per-abi` 
 ## Testing
 
 - `test/widget_test.dart` is the smoke test. It overrides `backendProvider` with `MockAgentBackend(simulate: false, latency: Duration.zero)`, visits every tab and pushes the agent-chat and project routes, once on a phone view (1080×2340 at 3x) and once on a desktop view (1440×900 at 1x, via the side rail). It also checks the header theme toggle.
-- `test/http_backend_test.dart` runs `HttpAgentBackend` against the real server handler in-process (streams, actions, wrong token, reconnect). `test/settings_test.dart` checks settings persistence.
-- `packages/agent_core/test/` covers the mock and the JSON/protocol round trips. `server/test/` covers the API, the runners (fixtures plus a fake CLI) and `LocalAgentBackend` (with a fake runner).
+- `test/http_backend_test.dart` runs `HttpAgentBackend` against the real server handler in-process (streams, actions, wrong token, reconnect). `test/push_test.dart` does the same for push registration, with a fake `PushMessaging`. `test/settings_test.dart` checks settings persistence.
+- `packages/agent_core/test/` covers the mock and the JSON/protocol round trips. `server/test/` covers the API, the runners (fixtures plus a fake CLI), `LocalAgentBackend` (with a fake runner) and `PushNotifier` (with a fake sender).
 - `test/version_test.dart` checks that `lib/app/app_version.dart` matches the `pubspec.yaml` version.
 - Status dots animate forever, so **never use `pumpAndSettle`**. Use `pump(const Duration(...))` instead.
 - Keep the suite small and meaningful, and run it once per change rather than repeatedly.
@@ -136,5 +141,5 @@ Only build an APK when asked: `flutter.bat build apk --release --split-per-abi` 
 
 - Only the Claude Code runner follows a checked output format. The Codex, Gemini CLI and Aider runners follow their documented flags and should be verified against the installed versions.
 - Most screens fire backend actions without catching errors. `main.dart` shows failed requests as a snackbar, but sheets don't reset their busy state on failure.
-- The notification toggles are UI only; push notifications don't exist yet.
+- Push notifications are Android only and untested on a device until the Firebase files are in place. The first real Android build with the Google Services plugin (AGP 9, plugin 4.5.0) hasn't been verified yet.
 - Web uses path URLs. The server falls back to `index.html`, but any other static host would need the same rewrite.
