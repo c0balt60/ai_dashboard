@@ -43,6 +43,8 @@ dependencies:
   web_socket_channel: ^3.0.3
   shared_preferences: ^2.5.5
   flutter_markdown_plus: ^1.0.12
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
 
 dev_dependencies:
   flutter_test:
