@@ -7,6 +7,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Push notifications need the Firebase config in android/app/google-services.json,
+// which git ignores. Without it the app builds and runs with push turned off.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Release signing secrets live in android/key.properties, which git ignores.
 // See key.properties.example.
 val keystorePropertiesFile = rootProject.file("key.properties")

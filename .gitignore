@@ -44,6 +44,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Firebase config for push notifications, see android/app/build.gradle.kts
+/android/app/google-services.json
+
 # Widget Preview related
 .widget_preview/
 

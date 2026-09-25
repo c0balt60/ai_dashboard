@@ -6,6 +6,8 @@
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS
 # and ANDROID_KEY_PASSWORD only for an old JKS keystore whose key has its own
 # password; PKCS12 keystores (keytool's default) use the store password.
+# GOOGLE_SERVICES_JSON (the Firebase android/app/google-services.json) is
+# optional; without it the APK builds with push notifications turned off.
 name: Android release
 
 on:
@@ -99,6 +101,16 @@ jobs:
             echo "keyPassword=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
             echo "keyAlias=${KEY_ALIAS:-upload}"
           } > android/key.properties
+
+      - name: Set up Firebase for push notifications
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::warning::No GOOGLE_SERVICES_JSON secret: this APK has push notifications turned off."
+          else
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          fi
 
       - run: flutter build apk --release --split-per-abi
 
