@@ -1,3 +1,4 @@
+import 'package:ai_dashboard/data/models/models.dart';
 import 'package:ai_dashboard/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,7 +18,9 @@ void main() {
       ..setServerUrl('https://my-pc.tailnet.ts.net/')
       ..setAuthToken(' secret ')
       ..setThemeMode(ThemeMode.dark)
-      ..setConnectionMode(ConnectionMode.server);
+      ..setConnectionMode(ConnectionMode.server)
+      ..setNotify(PushEvent.replied, false)
+      ..setNotify(PushEvent.waiting, true);
     expect(() => notifier.setServerUrl('my-pc:8787'), throwsFormatException);
     first.dispose();
 
@@ -28,5 +31,6 @@ void main() {
     expect(settings.authToken, 'secret');
     expect(settings.themeMode, ThemeMode.dark);
     expect(settings.connectionMode, ConnectionMode.server);
+    expect(settings.notifyOn, {PushEvent.failed, PushEvent.waiting});
   });
 }
