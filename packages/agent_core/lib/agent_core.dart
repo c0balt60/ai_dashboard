@@ -5,5 +5,6 @@ library;
 export 'models.dart';
 export 'src/models/json.dart' show decodeDayOrNull, decodeStrings, encodeDay;
 export 'src/backend/agent_backend.dart';
+export 'src/backend/builtin_commands.dart';
 export 'src/backend/mock_backend.dart';
 export 'src/protocol.dart';

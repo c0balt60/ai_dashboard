@@ -1,4 +1,5 @@
 import 'json.dart';
+import 'usage.dart';
 
 /// One conversation with an agent. Each agent has a default, general-purpose
 /// chat that shares the agent's id; every other chat belongs to a project and
@@ -12,6 +13,7 @@ class AgentChat {
     required this.createdAt,
     required this.updatedAt,
     this.projectId,
+    this.context,
   });
 
   factory AgentChat.fromJson(Json json) => AgentChat(
@@ -21,6 +23,10 @@ class AgentChat {
     createdAt: decodeTime(json['createdAt']),
     updatedAt: decodeTime(json['updatedAt']),
     projectId: json['projectId'] as String?,
+    context: switch (json['context']) {
+      final Json context => ContextUsage.fromJson(context),
+      _ => null,
+    },
   );
 
   /// The general-purpose chat every agent starts with.
@@ -43,6 +49,10 @@ class AgentChat {
   /// When the last message was posted.
   final DateTime updatedAt;
 
+  /// How full the chat's CLI conversation is, once the agent has reported
+  /// it. A cleared chat starts over without one.
+  final ContextUsage? context;
+
   bool get isDefault => id == agentId;
 
   String get displayTitle => title.isEmpty ? 'New chat' : title;
@@ -54,14 +64,20 @@ class AgentChat {
     'projectId': ?projectId,
     'createdAt': encodeTime(createdAt),
     'updatedAt': encodeTime(updatedAt),
+    if (context != null) 'context': context!.toJson(),
   };
 
-  AgentChat copyWith({String? title, DateTime? updatedAt}) => AgentChat(
+  AgentChat copyWith({
+    String? title,
+    DateTime? updatedAt,
+    ContextUsage? Function()? context,
+  }) => AgentChat(
     id: id,
     agentId: agentId,
     projectId: projectId,
     createdAt: createdAt,
     title: title ?? this.title,
     updatedAt: updatedAt ?? this.updatedAt,
+    context: context != null ? context() : this.context,
   );
 }

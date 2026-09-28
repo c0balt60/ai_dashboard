@@ -1,8 +1,12 @@
 import 'enums.dart';
 import 'json.dart';
+import 'usage.dart';
 
 /// A coding agent on the PC. It can belong to several projects
 /// ([projectIds]); [projectId] and [workingDir] are where it works right now.
+///
+/// [model] and [effort] are what the owner picked for it, null meaning the
+/// CLI's default; [activeModel] is the model the CLI last said it runs on.
 class Agent {
   const Agent({
     required this.id,
@@ -16,6 +20,10 @@ class Agent {
     this.workingDir,
     this.branch,
     this.currentTaskId,
+    this.model,
+    this.effort,
+    this.activeModel,
+    this.usage,
   });
 
   factory Agent.fromJson(Json json) {
@@ -35,6 +43,13 @@ class Agent {
       workingDir: json['workingDir'] as String?,
       branch: json['branch'] as String?,
       currentTaskId: json['currentTaskId'] as String?,
+      model: json['model'] as String?,
+      effort: EffortLevel.tryParse(json['effort']),
+      activeModel: json['activeModel'] as String?,
+      usage: switch (json['usage']) {
+        final Json usage => UsageLimits.fromJson(usage),
+        _ => null,
+      },
     );
   }
 
@@ -50,6 +65,10 @@ class Agent {
   final String? workingDir;
   final String? branch;
   final String? currentTaskId;
+  final String? model;
+  final EffortLevel? effort;
+  final String? activeModel;
+  final UsageLimits? usage;
 
   bool get isBusy =>
       status == AgentStatus.running || status == AgentStatus.waiting;
@@ -69,6 +88,10 @@ class Agent {
     'workingDir': ?workingDir,
     'branch': ?branch,
     'currentTaskId': ?currentTaskId,
+    'model': ?model,
+    'effort': ?effort?.name,
+    'activeModel': ?activeModel,
+    if (usage != null) 'usage': usage!.toJson(),
   };
 
   /// Moving the agent to a [projectId] also adds it to [projectIds].
@@ -81,6 +104,10 @@ class Agent {
     String? Function()? workingDir,
     String? Function()? branch,
     String? Function()? currentTaskId,
+    String? Function()? model,
+    EffortLevel? Function()? effort,
+    String? activeModel,
+    UsageLimits? usage,
   }) {
     final newProjectId = projectId != null ? projectId() : this.projectId;
     final ids = projectIds ?? this.projectIds;
@@ -100,6 +127,10 @@ class Agent {
       currentTaskId: currentTaskId != null
           ? currentTaskId()
           : this.currentTaskId,
+      model: model != null ? model() : this.model,
+      effort: effort != null ? effort() : this.effort,
+      activeModel: activeModel ?? this.activeModel,
+      usage: usage ?? this.usage,
     );
   }
 }

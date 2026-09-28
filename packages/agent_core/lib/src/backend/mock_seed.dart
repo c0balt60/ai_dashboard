@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import 'builtin_commands.dart';
 
 /// Initial fake state for [MockAgentBackend]. Timestamps are relative to [now]
 /// so the data always looks fresh.
@@ -220,6 +221,10 @@ class MockSeed {
       workingDir: r'C:\dev\shop-api',
       branch: 'feature/payments',
       currentTaskId: 't1',
+      model: 'opus',
+      effort: EffortLevel.high,
+      activeModel: 'claude-opus-5-5',
+      usage: _usage,
     ),
     Agent(
       id: 'a2',
@@ -257,6 +262,10 @@ class MockSeed {
       projectIds: const ['p4'],
       workingDir: r'C:\dev\ml-pipeline',
       branch: 'fix/flaky-tests',
+      model: 'sonnet',
+      effort: EffortLevel.medium,
+      activeModel: 'claude-sonnet-5',
+      usage: _usage,
     ),
     Agent(
       id: 'a5',
@@ -463,25 +472,180 @@ class MockSeed {
     String projectId,
     String title,
     DateTime created,
-    DateTime updated,
-  ) => AgentChat(
+    DateTime updated, {
+    int? contextTokens,
+  }) => AgentChat(
     id: id,
     agentId: agentId,
     projectId: projectId,
     title: title,
     createdAt: created,
     updatedAt: updated,
+    context: contextTokens == null
+        ? null
+        : ContextUsage(
+            usedTokens: contextTokens,
+            maxTokens: 200000,
+            updatedAt: updated,
+          ),
   );
 
   /// Every agent's general chat plus their project chats. The general chats
   /// are older than the project ones, so agents open on their project work.
   late final List<AgentChat> chats = [
     for (final a in agents) AgentChat.general(a.id, _ago(days: 7)),
-    _chat('c1', 'a1', 'p2', 'Stripe webhooks', _ago(hours: 2), _ago(minutes: 35)),
-    _chat('c2', 'a2', 'p1', 'Agent chat screen', _ago(hours: 2), _ago(minutes: 2)),
-    _chat('c3', 'a3', 'p2', 'Checkout test plan', _ago(hours: 1), _ago(minutes: 20)),
-    _chat('c4', 'a4', 'p4', 'Flaky tests', _ago(hours: 1), _ago(minutes: 20)),
-    _chat('c5', 'a1', 'p1', 'Router review', _ago(hours: 4), _ago(hours: 3)),
+    _chat(
+      'c1',
+      'a1',
+      'p2',
+      'Stripe webhooks',
+      _ago(hours: 2),
+      _ago(minutes: 35),
+      contextTokens: 142800,
+    ),
+    _chat(
+      'c2',
+      'a2',
+      'p1',
+      'Agent chat screen',
+      _ago(hours: 2),
+      _ago(minutes: 2),
+    ),
+    _chat(
+      'c3',
+      'a3',
+      'p2',
+      'Checkout test plan',
+      _ago(hours: 1),
+      _ago(minutes: 20),
+    ),
+    _chat(
+      'c4',
+      'a4',
+      'p4',
+      'Flaky tests',
+      _ago(hours: 1),
+      _ago(minutes: 20),
+      contextTokens: 61300,
+    ),
+    _chat(
+      'c5',
+      'a1',
+      'p1',
+      'Router review',
+      _ago(hours: 4),
+      _ago(hours: 3),
+      contextTokens: 38400,
+    ),
+  ];
+
+  /// Shared by both Claude agents, since limits belong to the account.
+  late final UsageLimits _usage = UsageLimits(
+    windows: [
+      UsageWindow(
+        kind: 'five_hour',
+        utilization: 0.34,
+        resetsAt: now.add(const Duration(hours: 2, minutes: 40)),
+      ),
+      UsageWindow(
+        kind: 'seven_day',
+        utilization: 0.61,
+        resetsAt: now.add(const Duration(days: 3, hours: 5)),
+      ),
+    ],
+    updatedAt: _ago(minutes: 1),
+  );
+
+  static const _claudeModels = [
+    ModelOption(
+      value: ModelOption.defaultValue,
+      label: 'Default (recommended)',
+      description: 'Opus 5.5 · Best for everyday, complex tasks',
+      resolved: 'claude-opus-5-5',
+      efforts: EffortLevel.values,
+    ),
+    ModelOption(
+      value: 'claude-fable-5-1',
+      label: 'Fable',
+      description: 'Fable 5.1 · Most capable for your hardest tasks',
+      resolved: 'claude-fable-5-1',
+      efforts: EffortLevel.values,
+    ),
+    ModelOption(
+      value: 'opus',
+      label: 'Opus',
+      description: 'Opus 5.5 · Best for everyday, complex tasks',
+      resolved: 'claude-opus-5-5',
+      efforts: EffortLevel.values,
+    ),
+    ModelOption(
+      value: 'sonnet',
+      label: 'Sonnet',
+      description: 'Sonnet 5 · Efficient for routine tasks',
+      resolved: 'claude-sonnet-5',
+      efforts: EffortLevel.values,
+    ),
+    ModelOption(
+      value: 'haiku',
+      label: 'Haiku',
+      description: 'Haiku 4.5 · Fastest for quick answers',
+      resolved: 'claude-haiku-4-5-20251001',
+    ),
+  ];
+
+  static const _claudeCommands = [
+    SlashCommand(
+      'compact',
+      description: 'Free up context by summarizing the conversation so far',
+      argumentHint: '<optional custom summarization instructions>',
+    ),
+    SlashCommand('context', description: 'Show current context usage'),
+    SlashCommand(
+      'usage',
+      description: 'Show session cost, plan usage and what uses your limits',
+    ),
+    SlashCommand(
+      'model',
+      description: 'Set the AI model for Claude Code',
+      argumentHint: '<model>',
+    ),
+    SlashCommand(
+      'effort',
+      description: 'Set effort level for model usage',
+      argumentHint: '<low|medium|high|xhigh|max|auto>',
+    ),
+    SlashCommand(
+      'clear',
+      description: 'Start a new session with empty context',
+    ),
+    SlashCommand(
+      'review',
+      description: 'Review a pull request',
+      argumentHint: '[<pr#>]',
+    ),
+    SlashCommand(
+      'security-review',
+      description: 'Complete a security review of the pending changes',
+    ),
+    SlashCommand(
+      'init',
+      description:
+          'Initialize a new CLAUDE.md file with codebase documentation',
+    ),
+  ];
+
+  late final List<AgentOptions> agentOptions = [
+    for (final a in agents)
+      a.type == AgentType.claudeCode
+          ? AgentOptions(
+              agentId: a.id,
+              models: _claudeModels,
+              commands: _claudeCommands,
+            )
+          : AgentOptions(
+              agentId: a.id,
+              commands: BuiltinCommands.fallback(models: false),
+            ),
   ];
 
   ChatMessage _msg(

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import '../models/models.dart';
 import 'agent_backend.dart';
+import 'builtin_commands.dart';
 import 'mock_seed.dart';
 
 /// In-memory [AgentBackend] that fakes a host PC running several agents.
@@ -34,6 +35,9 @@ class MockAgentBackend implements AgentBackend {
     for (final l in seed.todoLists) {
       _todoLists[l.id] = l;
     }
+    for (final o in seed.agentOptions) {
+      _options[o.agentId] = o;
+    }
     setSimulationEnabled(simulate);
   }
 
@@ -47,6 +51,7 @@ class MockAgentBackend implements AgentBackend {
   final _tasks = <String, AgentTask>{};
   final _messages = <String, List<ChatMessage>>{};
   final _todoLists = <String, TodoList>{};
+  final _options = <String, AgentOptions>{};
   final _changes = StreamController<void>.broadcast();
   Timer? _ticker;
   int _idCounter = 0;
@@ -85,11 +90,20 @@ class MockAgentBackend implements AgentBackend {
       _watch(() => List.unmodifiable(_messages[chatId] ?? const []));
 
   @override
+  Stream<List<AgentOptions>> watchAgentOptions() =>
+      _watch(() => List.unmodifiable(_options.values));
+
+  @override
   Future<void> sendPrompt(String chatId, String text) async {
     final chat = _chats[chatId];
     final agent = chat == null ? null : _agents[chat.agentId];
     if (chat == null || agent == null) return;
     _addMessage(chatId, MessageRole.user, text);
+    final command = parseSlashCommand(text);
+    if (command != null && _runBuiltin(chatId, agent, command)) {
+      _notify();
+      return;
+    }
     final project = _projects[chat.projectId];
     _agents[agent.id] = agent.copyWith(
       status: AgentStatus.running,
@@ -107,7 +121,13 @@ class MockAgentBackend implements AgentBackend {
     final current = _agents[agent.id];
     if (current == null || _changes.isClosed) return;
 
-    _addMessage(chatId, MessageRole.agent, _replyTo(current, chat, text));
+    if (command == null) {
+      _addMessage(chatId, MessageRole.agent, _replyTo(current, chat, text));
+      _useContext(chatId, 2500 + _random.nextInt(6000));
+      _useLimits(0.004);
+    } else {
+      _runCommand(chatId, current, command);
+    }
     final activeTask = _activeTaskFor(agent.id);
     _agents[agent.id] = current.copyWith(
       status: activeTask != null ? AgentStatus.running : AgentStatus.waiting,
@@ -159,6 +179,29 @@ class MockAgentBackend implements AgentBackend {
   @override
   Future<void> clearMessages(String chatId) async {
     _messages[chatId] = [];
+    if (_chats[chatId] case final chat?) {
+      _chats[chatId] = chat.copyWith(context: () => null);
+    }
+    _notify();
+  }
+
+  @override
+  Future<void> setAgentModel(
+    String agentId, {
+    String? model,
+    EffortLevel? effort,
+  }) async {
+    final agent = _agents[agentId];
+    if (agent == null) return;
+    _applyModel(agentId, model, effort);
+    if (agent.status == AgentStatus.running) {
+      _addMessage(
+        _noticeChatOf(agent),
+        MessageRole.system,
+        'Switched to ${describeModel(_agents[agentId]!, _options[agentId])} '
+        'from the next step',
+      );
+    }
     _notify();
   }
 
@@ -260,13 +303,7 @@ class MockAgentBackend implements AgentBackend {
       currentTaskId: () => null,
       lastActive: DateTime.now(),
     );
-    _addMessage(
-      agent.projectId == null
-          ? agentId
-          : _chatFor(agentId, agent.projectId!).id,
-      MessageRole.system,
-      'Stopped by user',
-    );
+    _addMessage(_noticeChatOf(agent), MessageRole.system, 'Stopped by user');
     if (agent.projectId != null) {
       _log(
         agent.projectId!,
@@ -486,6 +523,13 @@ class MockAgentBackend implements AgentBackend {
       _projects[task.projectId] = _projects[task.projectId]!.copyWith(
         lastActivity: now,
       );
+      if (agent.type == AgentType.claudeCode) {
+        _useContext(
+          _chatFor(agent.id, task.projectId).id,
+          600 + _random.nextInt(1800),
+        );
+        _useLimits(0.001);
+      }
     }
 
     _promoteWaitingTasks(now);
@@ -586,6 +630,160 @@ class MockAgentBackend implements AgentBackend {
       );
     }
   }
+
+  /// Answers `/clear`, `/model` and `/effort` straight away. Returns whether
+  /// [command] was one of them.
+  bool _runBuiltin(String chatId, Agent agent, SlashInvocation command) {
+    if (command.name == BuiltinCommands.clear) {
+      _messages[chatId] = [];
+      _chats[chatId] = _chats[chatId]!.copyWith(context: () => null);
+      _addMessage(chatId, MessageRole.system, 'Started a new conversation');
+      return true;
+    }
+    final settings = resolveSettingsCommand(command, agent, _options[agent.id]);
+    if (settings == null) return false;
+    if (settings.changed) {
+      _applyModel(agent.id, settings.model, settings.effort);
+    }
+    _addMessage(chatId, MessageRole.system, settings.message);
+    return true;
+  }
+
+  /// Fakes what Claude Code prints for its common commands.
+  void _runCommand(String chatId, Agent agent, SlashInvocation command) {
+    final context = _chats[chatId]?.context;
+    if (agent.type != AgentType.claudeCode) {
+      _addMessage(
+        chatId,
+        MessageRole.system,
+        '${agent.type.label} has no /${command.name} command',
+      );
+      return;
+    }
+    switch (command.name) {
+      case 'compact':
+        final before = context?.usedTokens ?? 0;
+        final after = 9000 + _random.nextInt(6000);
+        _setContext(chatId, after);
+        _addMessage(
+          chatId,
+          MessageRole.system,
+          'Compacted the conversation: ${formatTokens(before)} → '
+          '${formatTokens(after)} tokens',
+        );
+        _useLimits(0.01);
+      case 'context':
+        final used = context?.usedTokens ?? 0;
+        final window = context?.maxTokens ?? _contextWindow;
+        _addMessage(
+          chatId,
+          MessageRole.agent,
+          '## Context usage\n\n'
+          '**Model:** ${agent.activeModel ?? 'default'}  \n'
+          '**Tokens:** ${formatTokens(used)} / ${formatTokens(window)} '
+          '(${(100 * used / window).round()}%)\n\n'
+          '| Category | Tokens |\n|---|---|\n'
+          '| System prompt | 6.4k |\n| System tools | 22.3k |\n'
+          '| Messages | ${formatTokens(max(0, used - 28700))} |\n'
+          '| Free space | ${formatTokens(window - used)} |',
+        );
+      case 'usage':
+        _addMessage(
+          chatId,
+          MessageRole.agent,
+          [
+            'You are using your subscription to power Claude Code.',
+            for (final w in agent.usage?.windows ?? const <UsageWindow>[])
+              '${w.label}: ${(w.utilization * 100).round()}% used',
+          ].join('\n\n'),
+        );
+      default:
+        _addMessage(
+          chatId,
+          MessageRole.agent,
+          'Ran `/${command.name}${command.args.isEmpty ? '' : ' ${command.args}'}`.',
+        );
+        _useContext(chatId, 4000 + _random.nextInt(8000));
+        _useLimits(0.006);
+    }
+  }
+
+  void _applyModel(String agentId, String? model, EffortLevel? effort) {
+    final agent = _agents[agentId]!;
+    final option = _options[agentId]?.model(model);
+    _agents[agentId] = agent.copyWith(
+      model: () => model,
+      effort: () => effort,
+      activeModel: option?.resolved ?? model,
+    );
+  }
+
+  static const _contextWindow = 200000;
+
+  void _setContext(String chatId, int tokens) {
+    final chat = _chats[chatId];
+    if (chat == null) return;
+    _chats[chatId] = chat.copyWith(
+      context: () => ContextUsage(
+        usedTokens: tokens,
+        maxTokens: chat.context?.maxTokens ?? _contextWindow,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Grows a Claude chat's context, compacting it the way Claude Code does
+  /// automatically once it is nearly full.
+  void _useContext(String chatId, int tokens) {
+    final chat = _chats[chatId];
+    final agent = chat == null ? null : _agents[chat.agentId];
+    if (chat == null || agent?.type != AgentType.claudeCode) return;
+    final max = chat.context?.maxTokens ?? _contextWindow;
+    final used = (chat.context?.usedTokens ?? 30000) + tokens;
+    if (used < max * 0.9) {
+      _setContext(chatId, used);
+      return;
+    }
+    _setContext(chatId, (max * 0.12).round());
+    _addMessage(
+      chatId,
+      MessageRole.system,
+      'The context was nearly full, so the conversation was compacted',
+    );
+  }
+
+  /// Uses up a [share] of every account limit. The Claude agents share one
+  /// account, so they all move together.
+  void _useLimits(double share) {
+    final now = DateTime.now();
+    for (final agent in _agents.values.toList()) {
+      final usage = agent.usage;
+      if (usage == null) continue;
+      _agents[agent.id] = agent.copyWith(
+        usage: UsageLimits(
+          windows: [
+            for (final w in usage.windows)
+              UsageWindow(
+                kind: w.kind,
+                utilization: min(
+                  1,
+                  w.utilization + (w.kind == 'five_hour' ? share : share / 4),
+                ),
+                resetsAt: w.resetsAt,
+              ),
+          ],
+          updatedAt: now,
+        ),
+      );
+    }
+  }
+
+  /// Where notices about the agent go: its chat for the project it is in,
+  /// else its general chat.
+  String _noticeChatOf(Agent agent) => switch (agent.projectId) {
+    final projectId? => _chatFor(agent.id, projectId).id,
+    null => agent.id,
+  };
 
   AgentTask? _activeTaskFor(String agentId) {
     for (final t in _tasks.values) {

@@ -1,5 +1,6 @@
 export 'agent.dart';
 export 'agent_chat.dart';
+export 'agent_options.dart';
 export 'agent_task.dart';
 export 'chat_message.dart';
 export 'enums.dart';
@@ -9,3 +10,4 @@ export 'project.dart';
 export 'push_device.dart';
 export 'test_run.dart';
 export 'todo_list.dart';
+export 'usage.dart';

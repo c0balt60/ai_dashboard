@@ -17,8 +17,15 @@ abstract interface class AgentBackend {
 
   Stream<List<ChatMessage>> watchMessages(String chatId);
 
+  /// The models and slash commands each agent's CLI offers.
+  Stream<List<AgentOptions>> watchAgentOptions();
+
   /// Runs a turn in the chat's project folder (the agent's current folder for
   /// its default chat). The first prompt of an untitled chat names it.
+  ///
+  /// A prompt starting with `/` runs one of the agent's
+  /// [AgentOptions.commands]. `/model`, `/effort` and `/clear` are handled by
+  /// the backend itself, so they work while the agent is busy too.
   Future<void> sendPrompt(String chatId, String text);
 
   /// Starts a chat with [agentId], in [projectId] or general purpose.
@@ -49,6 +56,15 @@ abstract interface class AgentBackend {
   /// Replaces the projects the agent belongs to without interrupting it.
   /// Leaving its current project unassigns it from that folder.
   Future<void> setAgentProjects(String agentId, List<String> projectIds);
+
+  /// Picks the model and effort level the agent runs on, null meaning the
+  /// CLI's default. A running turn switches right away when its CLI allows
+  /// it (Claude Code does), otherwise the next turn uses them.
+  Future<void> setAgentModel(
+    String agentId, {
+    String? model,
+    EffortLevel? effort,
+  });
 
   Future<void> stopAgent(String agentId);
 

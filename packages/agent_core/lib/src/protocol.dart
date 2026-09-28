@@ -23,6 +23,7 @@ abstract final class ApiPaths {
   static String agentProjects(String agentId) =>
       '/api/agents/$agentId/projects';
   static String stop(String agentId) => '/api/agents/$agentId/stop';
+  static String agentModel(String agentId) => '/api/agents/$agentId/model';
 
   static const chats = '/api/chats';
   static String chat(String chatId) => '/api/chats/$chatId';
@@ -54,13 +55,13 @@ abstract final class Topics {
   static const tasks = 'tasks';
   static const todoLists = 'todoLists';
   static const chats = 'chats';
+  static const agentOptions = 'agentOptions';
   static const _messagesPrefix = 'messages:';
 
   static String messages(String chatId) => '$_messagesPrefix$chatId';
 
   /// The chat id of a [messages] topic, or null for any other topic.
-  static String? messagesChat(String topic) =>
-      topic.startsWith(_messagesPrefix)
+  static String? messagesChat(String topic) => topic.startsWith(_messagesPrefix)
       ? topic.substring(_messagesPrefix.length)
       : null;
 }
@@ -86,6 +87,9 @@ Stream<List<Json>>? watchTopicJson(AgentBackend backend, String topic) {
     ),
     Topics.chats => backend.watchChats().map(
       (l) => encode(l, (c) => c.toJson()),
+    ),
+    Topics.agentOptions => backend.watchAgentOptions().map(
+      (l) => encode(l, (o) => o.toJson()),
     ),
     _ => switch (Topics.messagesChat(topic)) {
       final chatId? =>

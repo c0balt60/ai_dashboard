@@ -36,13 +36,15 @@ void main() {
     final aider = (await backend.watchAgents().first).firstWhere(
       (a) => a.id == 'a5',
     );
-    expect((aider.projectId, aider.projectIds), ('p3', ['p3']));
+    expect(aider.projectId, 'p3');
+    expect(aider.projectIds, ['p3']);
 
     await backend.setAgentProjects('a5', ['p1', 'p2']);
     final moved = (await backend.watchAgents().first).firstWhere(
       (a) => a.id == 'a5',
     );
-    expect((moved.projectId, moved.projectIds), (null, ['p1', 'p2']));
+    expect(moved.projectId, isNull);
+    expect(moved.projectIds, ['p1', 'p2']);
 
     await backend.deleteChat('a5');
     await backend.deleteChat(chat.id);
@@ -50,31 +52,34 @@ void main() {
     expect(left.where((c) => c.agentId == 'a5').map((c) => c.id), ['a5']);
   });
 
-  test('a task from a to-do carries its notes and ticks the to-do off', () async {
-    final backend = MockAgentBackend(simulate: false, latency: Duration.zero);
-    addTearDown(backend.dispose);
+  test(
+    'a task from a to-do carries its notes and ticks the to-do off',
+    () async {
+      final backend = MockAgentBackend(simulate: false, latency: Duration.zero);
+      addTearDown(backend.dispose);
 
-    Future<TodoItem> item() async => (await backend.watchTodoLists().first)
-        .firstWhere((l) => l.id == 'l1')
-        .items
-        .firstWhere((i) => i.id == 'i4');
+      Future<TodoItem> item() async => (await backend.watchTodoLists().first)
+          .firstWhere((l) => l.id == 'l1')
+          .items
+          .firstWhere((i) => i.id == 'i4');
 
-    final task = await backend.createTask(
-      'Write release notes',
-      'p1',
-      agentId: 'a5',
-      description: 'Cover chats per project.',
-      todo: const TodoLink(listId: 'l1', itemId: 'i4'),
-    );
-    expect(task.brief, contains('Cover chats per project.'));
+      final task = await backend.createTask(
+        'Write release notes',
+        'p1',
+        agentId: 'a5',
+        description: 'Cover chats per project.',
+        todo: const TodoLink(listId: 'l1', itemId: 'i4'),
+      );
+      expect(task.brief, contains('Cover chats per project.'));
 
-    await backend.updateTaskState(task.id, TaskState.completed);
-    expect((await item()).done, isTrue);
-    expect((await item()).completedAt, isNotNull);
+      await backend.updateTaskState(task.id, TaskState.completed);
+      expect((await item()).done, isTrue);
+      expect((await item()).completedAt, isNotNull);
 
-    await backend.updateTaskState(task.id, TaskState.waiting);
-    expect((await item()).done, isFalse);
-  });
+      await backend.updateTaskState(task.id, TaskState.waiting);
+      expect((await item()).done, isFalse);
+    },
+  );
 
   test('to-do items keep their tags and dates, and ticking them off stamps '
       'completedAt', () async {
@@ -115,5 +120,41 @@ void main() {
     await backend.deleteTodoList(created.id);
     final lists = await backend.watchTodoLists().first;
     expect(lists.any((l) => l.id == created.id), isFalse);
+  });
+
+  test('slash commands switch the model, compact and clear a chat', () async {
+    final backend = MockAgentBackend(simulate: false, latency: Duration.zero);
+    addTearDown(backend.dispose);
+
+    Future<Agent> claude() async =>
+        (await backend.watchAgents().first).firstWhere((a) => a.id == 'a1');
+    Future<AgentChat> chat() async =>
+        (await backend.watchChats().first).firstWhere((c) => c.id == 'c1');
+
+    await backend.sendPrompt('c1', '/model sonnet');
+    await backend.sendPrompt('c1', '/effort max');
+    final switched = await claude();
+    expect((switched.model, switched.effort), ('sonnet', EffortLevel.max));
+    expect(switched.activeModel, 'claude-sonnet-5');
+
+    final before = (await chat()).context!.usedTokens;
+    await backend.sendPrompt('c1', '/compact');
+    expect((await chat()).context!.usedTokens, lessThan(before));
+    expect(
+      (await backend.watchMessages('c1').first).last.text,
+      startsWith('Compacted the conversation'),
+    );
+
+    await backend.sendPrompt('c1', '/clear');
+    expect((await chat()).context, isNull);
+    expect(await backend.watchMessages('c1').first, hasLength(1));
+
+    await backend.setAgentModel('a1', model: null, effort: null);
+    expect((await claude()).model, isNull);
+    final options = await backend.watchAgentOptions().first;
+    expect(
+      options.firstWhere((o) => o.agentId == 'a1').commands.map((c) => c.name),
+      containsAll(['compact', 'context', 'model']),
+    );
   });
 }

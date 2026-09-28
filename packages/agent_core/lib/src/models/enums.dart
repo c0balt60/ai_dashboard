@@ -14,6 +14,23 @@ enum AgentType {
   final String shortLabel;
 }
 
+/// How hard the model thinks before answering, as Claude Code's `--effort`
+/// names it. Higher levels are slower and use more of the usage limits.
+enum EffortLevel {
+  low('Low'),
+  medium('Medium'),
+  high('High'),
+  xhigh('Extra high'),
+  max('Max');
+
+  const EffortLevel(this.label);
+
+  final String label;
+
+  /// The level named [name], or null for one this version doesn't know.
+  static EffortLevel? tryParse(Object? name) => values.asNameMap()[name];
+}
+
 /// Position of a task in the queue.
 enum TaskState { active, waiting, backlog, completed, failed }
 

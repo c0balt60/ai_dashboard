@@ -97,4 +97,44 @@ void main() {
       expect(back.startDate, isNull);
     },
   );
+
+  test('agent options and usage survive a JSON round trip', () {
+    for (final o in seed.agentOptions) {
+      expectRoundTrip(o, (v) => v.toJson(), AgentOptions.fromJson);
+    }
+    final claude = seed.agents.firstWhere((a) => a.usage != null);
+    expect(Agent.fromJson(claude.toJson()).effort, claude.effort);
+    expect(
+      AgentChat.fromJson(
+        seed.chats.firstWhere((c) => c.context != null).toJson(),
+      ).context?.maxTokens,
+      200000,
+    );
+  });
+
+  test('slash commands, model names and token counts read naturally', () {
+    expect(parseSlashCommand('  /compact keep the plan '), (
+      name: 'compact',
+      args: 'keep the plan',
+    ));
+    expect(parseSlashCommand('/anthropic-skills:pdf'), (
+      name: 'anthropic-skills:pdf',
+      args: '',
+    ));
+    expect(parseSlashCommand('/usr/bin is a folder'), isNull);
+    expect(parseSlashCommand('please /compact'), isNull);
+
+    expect(modelDisplayName('claude-opus-5-5[1m]'), 'Opus 5.5 (1M)');
+    expect(modelDisplayName('claude-haiku-4-5-20251001'), 'Haiku 4.5');
+    expect(modelDisplayName('claude-sonnet-5'), 'Sonnet 5');
+    expect(modelDisplayName('gpt-5-codex'), isNull);
+
+    expect([35293, 999, 1000000, 142800].map(formatTokens), [
+      '35.3k',
+      '999',
+      '1M',
+      '143k',
+    ]);
+    expect(EffortLevel.tryParse('ultracode'), isNull);
+  });
 }
