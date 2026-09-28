@@ -10,11 +10,20 @@ import 'package:ai_dashboard_server/test_summary.dart';
 import 'package:test/test.dart';
 
 class FakeTurn {
-  FakeTurn(this.prompt, this.workingDir, this.sessionId);
+  FakeTurn(
+    this.prompt,
+    this.workingDir,
+    this.sessionId,
+    this.model,
+    this.effort,
+  );
 
   final String prompt;
   final String workingDir;
   final String? sessionId;
+  final String? model;
+  final EffortLevel? effort;
+  final changes = <TurnChange>[];
   final controller = StreamController<RunnerEvent>();
   var cancelled = false;
 
@@ -33,16 +42,39 @@ class FakeRunner implements AgentRunner {
     required String prompt,
     required String workingDir,
     String? sessionId,
+    String? model,
+    EffortLevel? effort,
   }) {
-    final turn = FakeTurn(prompt, workingDir, sessionId);
+    final turn = FakeTurn(prompt, workingDir, sessionId, model, effort);
     turns.add(turn);
-    return AgentTurn(turn.controller.stream, () async {
-      turn.cancelled = true;
-      if (!turn.controller.isClosed) {
-        turn.emit(const FinishedEvent(success: false, error: 'Stopped'));
-      }
-    });
+    return AgentTurn(
+      turn.controller.stream,
+      () async {
+        turn.cancelled = true;
+        if (!turn.controller.isClosed) {
+          turn.emit(const FinishedEvent(success: false, error: 'Stopped'));
+        }
+      },
+      apply: (change) {
+        turn.changes.add(change);
+        return true;
+      },
+    );
   }
+
+  @override
+  Future<RunnerOptions> discover(String workingDir) async => (
+    models: const [
+      ModelOption(
+        value: 'opus',
+        label: 'Opus',
+        resolved: 'claude-opus-5-5',
+        efforts: EffortLevel.values,
+      ),
+      ModelOption(value: 'haiku', label: 'Haiku', resolved: 'claude-haiku-4-5'),
+    ],
+    commands: const [SlashCommand('compact'), SlashCommand('model')],
+  );
 }
 
 Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 10));
@@ -300,5 +332,143 @@ void main() {
     final unknown = parseTestSummary('build ok');
     expect((unknown.passed, unknown.failed), (0, 0));
     expect(unknown.failing, isEmpty);
+  });
+
+  test(
+    'the picked model reaches the CLI and switches a running turn',
+    () async {
+      final backend = create();
+      addTearDown(backend.dispose);
+      await settle();
+      final options = (await backend.watchAgentOptions().first).single;
+      expect(options.models.map((m) => m.value), ['opus', 'haiku']);
+
+      await backend.setAgentModel(
+        'claude',
+        model: 'haiku',
+        effort: EffortLevel.high,
+      );
+      await backend.sendPrompt('claude', 'Explain main.dart');
+      final turn = runner.turns.single;
+      // Haiku has no effort levels, so the flag stays off.
+      expect((turn.model, turn.effort), ('haiku', null));
+
+      await backend.setAgentModel(
+        'claude',
+        model: 'opus',
+        effort: EffortLevel.max,
+      );
+      expect(turn.changes.map((c) => c.runtimeType), [
+        ModelChange,
+        EffortChange,
+      ]);
+      expect((turn.changes.first as ModelChange).model, 'opus');
+      final messages = await backend.watchMessages('claude').first;
+      expect(
+        messages.last.text,
+        'Switched to Opus 5.5 · Max from the next step',
+      );
+      final updated = await agent(backend);
+      expect((updated.model, updated.effort), ('opus', EffortLevel.max));
+    },
+  );
+
+  test(
+    '/model, /effort and /clear work without a turn, even when busy',
+    () async {
+      final backend = create();
+      addTearDown(backend.dispose);
+      await settle();
+
+      await backend.sendPrompt('claude', 'Start working');
+      final turn = runner.turns.single;
+      await backend.sendPrompt('claude', '/model haiku');
+      await backend.sendPrompt('claude', '/effort nonsense');
+      await backend.sendPrompt('claude', '/clear');
+      expect(runner.turns, hasLength(1));
+      expect((await agent(backend)).model, 'haiku');
+      expect((turn.changes.single as ModelChange).model, 'haiku');
+      final texts = [
+        for (final m in await backend.watchMessages('claude').first)
+          if (m.role == MessageRole.system) m.text,
+      ];
+      expect(texts[0], 'Switched to Haiku 4.5 from the next step');
+      expect(texts[1], startsWith('No effort level "nonsense"'));
+      expect(texts[2], contains('still working in this chat'));
+
+      turn.emit(const FinishedEvent(success: true));
+      await settle();
+      await backend.sendPrompt('claude', '/clear');
+      final cleared = await backend.watchMessages('claude').first;
+      expect(cleared.single.text, 'Started a new conversation');
+
+      await backend.sendPrompt('claude', '/compact keep the plan');
+      expect(runner.turns.last.prompt, '/compact keep the plan');
+    },
+  );
+
+  test('model, usage, context and notices from the CLI are recorded', () async {
+    config = ServerConfig(
+      token: config.token,
+      dataDir: config.dataDir,
+      projects: config.projects,
+      agents: const [
+        AgentConfig(id: 'claude', name: 'Claude', type: AgentType.claudeCode),
+        AgentConfig(
+          id: 'claude2',
+          name: 'Claude 2',
+          type: AgentType.claudeCode,
+        ),
+      ],
+    );
+    final backend = create();
+    addTearDown(backend.dispose);
+
+    await backend.sendPrompt('claude', 'Hello');
+    final usage = UsageLimits(
+      windows: const [UsageWindow(kind: 'five_hour', utilization: 0.4)],
+      updatedAt: DateTime(2030),
+    );
+    runner.turns.single
+      ..emit(const ModelEvent('claude-opus-5-5'))
+      ..emit(UsageEvent(usage))
+      ..emit(const ContextEvent(usedTokens: 42000))
+      ..emit(const ContextEvent(maxTokens: 1000000))
+      ..emit(const CommandsEvent(['compact', 'my-project-command']))
+      ..emit(const NoticeEvent('Compacted the conversation'))
+      ..emit(const FinishedEvent(success: true));
+    await settle();
+
+    final agents = await backend.watchAgents().first;
+    final claude = agents.firstWhere((a) => a.id == 'claude');
+    expect(claude.activeModel, 'claude-opus-5-5');
+    // Both agents share the account, so both show its limits.
+    expect(
+      [for (final a in agents) a.usage?.windows.single.utilization],
+      [0.4, 0.4],
+    );
+    final chat = (await backend.watchChats().first).firstWhere(
+      (c) => c.id == 'claude',
+    );
+    expect(
+      (chat.context?.usedTokens, chat.context?.maxTokens),
+      (42000, 1000000),
+    );
+    final options = (await backend.watchAgentOptions().first).firstWhere(
+      (o) => o.agentId == 'claude',
+    );
+    expect(options.commands.map((c) => c.name), [
+      'compact',
+      'model',
+      'my-project-command',
+    ]);
+    final messages = await backend.watchMessages('claude').first;
+    expect(messages.last.text, 'Compacted the conversation');
+
+    await backend.clearMessages('claude');
+    final cleared = (await backend.watchChats().first).firstWhere(
+      (c) => c.id == 'claude',
+    );
+    expect(cleared.context, isNull);
   });
 }

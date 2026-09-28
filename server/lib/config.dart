@@ -149,6 +149,7 @@ class AgentConfig {
     required this.type,
     this.executable,
     this.extraArgs = const [],
+    this.models = const [],
     this.projectId,
   });
 
@@ -161,6 +162,7 @@ class AgentConfig {
       type: type,
       executable: json['executable'] as String?,
       extraArgs: decodeStrings(json['extraArgs']),
+      models: decodeStrings(json['models']),
       projectId: json['projectId'] as String?,
     );
   }
@@ -174,6 +176,10 @@ class AgentConfig {
 
   /// Extra CLI flags for every turn, e.g. Claude Code's permission flags.
   final List<String> extraArgs;
+
+  /// Models to offer in the app for CLIs that can't list their own, e.g.
+  /// `["gpt-5-codex"]` for Codex. Claude Code lists its models itself.
+  final List<String> models;
 
   /// The project the agent starts out in.
   final String? projectId;

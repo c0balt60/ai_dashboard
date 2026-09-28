@@ -37,11 +37,49 @@ final class ReplyEvent extends RunnerEvent {
   final String text;
 }
 
+/// Something about the turn itself worth a line in the chat, such as a
+/// finished `/compact`.
+final class NoticeEvent extends RunnerEvent {
+  const NoticeEvent(this.text);
+
+  final String text;
+}
+
 /// The agent's current plan, e.g. from Claude Code's to-do tool.
 final class StepsEvent extends RunnerEvent {
   const StepsEvent(this.steps);
 
   final List<TaskStep> steps;
+}
+
+/// The full id of the model the CLI runs on, e.g. `claude-opus-5-5`.
+final class ModelEvent extends RunnerEvent {
+  const ModelEvent(this.model);
+
+  final String model;
+}
+
+/// How much of the account's usage limits is used.
+final class UsageEvent extends RunnerEvent {
+  const UsageEvent(this.usage);
+
+  final UsageLimits usage;
+}
+
+/// How full the conversation is: [usedTokens] when the CLI sent the model a
+/// request, [maxTokens] once it reports the model's context window.
+final class ContextEvent extends RunnerEvent {
+  const ContextEvent({this.usedTokens, this.maxTokens});
+
+  final int? usedTokens;
+  final int? maxTokens;
+}
+
+/// The slash commands the CLI accepts in this turn's folder.
+final class CommandsEvent extends RunnerEvent {
+  const CommandsEvent(this.names);
+
+  final List<String> names;
 }
 
 /// Always the last event of a turn.
@@ -52,15 +90,44 @@ final class FinishedEvent extends RunnerEvent {
   final String? error;
 }
 
+/// A setting to change while a turn runs.
+sealed class TurnChange {
+  const TurnChange();
+}
+
+final class ModelChange extends TurnChange {
+  const ModelChange(this.model);
+
+  /// Null switches back to the CLI's default.
+  final String? model;
+}
+
+final class EffortChange extends TurnChange {
+  const EffortChange(this.effort);
+
+  final EffortLevel? effort;
+}
+
 /// One turn in progress. [events] always ends with a [FinishedEvent].
 class AgentTurn {
-  AgentTurn(this.events, this._cancel);
+  AgentTurn(this.events, this._cancel, {this._apply});
 
   final Stream<RunnerEvent> events;
   final Future<void> Function() _cancel;
+  final bool Function(TurnChange)? _apply;
 
   Future<void> cancel() => _cancel();
+
+  /// Hands [change] to the running CLI. Returns false when the CLI can't take
+  /// it mid-turn, in which case it applies from the next turn.
+  bool apply(TurnChange change) => _apply?.call(change) ?? false;
 }
+
+/// The models and slash commands a CLI offers.
+typedef RunnerOptions = ({
+  List<ModelOption> models,
+  List<SlashCommand> commands,
+});
 
 /// Runs one agent CLI headlessly, one process per turn.
 abstract interface class AgentRunner {
@@ -75,22 +142,52 @@ abstract interface class AgentRunner {
     required String prompt,
     required String workingDir,
     String? sessionId,
+    String? model,
+    EffortLevel? effort,
   });
+
+  /// Asks the CLI which models and commands it offers in [workingDir].
+  Future<RunnerOptions> discover(String workingDir);
 }
 
 /// Starts [executable] for each turn, passes the prompt on stdin (or in a
 /// temp file when [promptViaFile]) and turns its stdout lines into events.
+///
+/// A CLI that [keepsInputOpen] reads more input while it works, such as
+/// [TurnChange]s, and is told the turn is over by closing its stdin once it
+/// reported its result.
 abstract class CliRunner implements AgentRunner {
-  CliRunner({required this.executable, this.extraArgs = const []});
+  CliRunner({
+    required this.executable,
+    this.extraArgs = const [],
+    this.models = const [],
+  });
 
   final String executable;
   final List<String> extraArgs;
 
+  /// The models listed for this agent in the config.
+  final List<String> models;
+
   bool get promptViaFile => false;
+
+  bool get keepsInputOpen => false;
 
   /// The full argument list for one turn, with [extraArgs] placed where the
   /// CLI accepts options.
-  List<String> argsFor({String? sessionId, String? promptFile});
+  List<String> argsFor({
+    String? sessionId,
+    String? promptFile,
+    String? model,
+    EffortLevel? effort,
+  });
+
+  /// What goes on stdin to start the turn.
+  List<int> encodePrompt(String prompt) => utf8.encode(prompt);
+
+  /// The stdin line that applies [change] mid-turn, or null when the CLI
+  /// can't.
+  String? encodeChange(TurnChange change) => null;
 
   Iterable<RunnerEvent> parseLine(String line);
 
@@ -111,15 +208,27 @@ abstract class CliRunner implements AgentRunner {
   }
 
   @override
+  Future<RunnerOptions> discover(String workingDir) async => (
+    models: [
+      for (final m in models)
+        ModelOption(value: m, label: modelDisplayName(m) ?? m),
+    ],
+    commands: BuiltinCommands.fallback(models: models.isNotEmpty),
+  );
+
+  @override
   AgentTurn start({
     required String prompt,
     required String workingDir,
     String? sessionId,
+    String? model,
+    EffortLevel? effort,
   }) {
     final controller = StreamController<RunnerEvent>();
     Process? process;
     var cancelled = false;
     var finished = false;
+    var inputOpen = false;
 
     void emit(RunnerEvent event) {
       if (finished) return;
@@ -128,6 +237,20 @@ abstract class CliRunner implements AgentRunner {
         finished = true;
         controller.close();
       }
+    }
+
+    void closeInput() {
+      if (!inputOpen) return;
+      inputOpen = false;
+      process?.stdin.close().ignore();
+    }
+
+    bool apply(TurnChange change) {
+      final line = encodeChange(change);
+      final running = process;
+      if (line == null || running == null || !inputOpen) return false;
+      running.stdin.writeln(line);
+      return true;
     }
 
     Future<void> run() async {
@@ -147,14 +270,25 @@ abstract class CliRunner implements AgentRunner {
         }
         final started = await Process.start(
           launch.executable,
-          argsFor(sessionId: sessionId, promptFile: promptFile?.path),
+          argsFor(
+            sessionId: sessionId,
+            promptFile: promptFile?.path,
+            model: model,
+            effort: effort,
+          ),
           workingDirectory: workingDir,
           runInShell: launch.runInShell,
         );
         process = started;
+        // Writing to a CLI that already exited must not crash the server.
+        started.stdin.done.ignore();
         if (cancelled) await killTree(started);
-        if (!promptViaFile) started.stdin.add(utf8.encode(prompt));
-        await started.stdin.close();
+        if (!promptViaFile) started.stdin.add(encodePrompt(prompt));
+        if (keepsInputOpen) {
+          inputOpen = true;
+        } else {
+          await started.stdin.close();
+        }
 
         final stderrTail = <String>[];
         final decoder = const Utf8Decoder(allowMalformed: true);
@@ -175,11 +309,13 @@ abstract class CliRunner implements AgentRunner {
           for (final event in parseLine(line)) {
             if (event is FinishedEvent) {
               reported ??= event;
+              closeInput();
             } else {
               emit(event);
             }
           }
         }
+        closeInput();
         final code = await started.exitCode;
         await stderrDone;
         if (cancelled) {
@@ -194,6 +330,7 @@ abstract class CliRunner implements AgentRunner {
           FinishedEvent(success: false, error: 'Could not run $executable: $e'),
         );
       } finally {
+        inputOpen = false;
         try {
           await promptFile?.parent.delete(recursive: true);
         } on FileSystemException {
@@ -206,8 +343,9 @@ abstract class CliRunner implements AgentRunner {
     run();
     return AgentTurn(controller.stream, () async {
       cancelled = true;
+      inputOpen = false;
       if (process case final running?) await killTree(running);
-    });
+    }, apply: apply);
   }
 }
 

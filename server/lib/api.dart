@@ -129,6 +129,20 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
         ),
       ),
     )
+    ..put(
+      ApiPaths.agentModel('<id>'),
+      (Request r, String id) => action(r, (b) {
+        final effort = b['effort'];
+        if (effort != null && EffortLevel.tryParse(effort) == null) {
+          throw ArgumentError('Unknown effort level $effort');
+        }
+        return backend.setAgentModel(
+          id,
+          model: b['model'] as String?,
+          effort: EffortLevel.tryParse(effort),
+        );
+      }),
+    )
     ..post(
       ApiPaths.stop('<id>'),
       (Request r, String id) => action(r, (_) => backend.stopAgent(id)),

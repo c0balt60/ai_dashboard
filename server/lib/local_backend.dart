@@ -26,6 +26,11 @@ typedef _Session = ({String id, String dir});
 /// starts as soon as the agent is free, in the agent's latest chat for the
 /// task's project, and ends `completed` or `failed` with its turn; after a
 /// successful task the project's `testCommand`, if any, records a test run.
+///
+/// Each agent runs on the model and effort picked for it; changing them
+/// reaches a running turn straight away when its CLI allows it. The models
+/// and slash commands on offer come from asking each CLI at startup, and the
+/// usage limits and context fill come from what the CLI reports as it works.
 class LocalAgentBackend implements AgentBackend {
   LocalAgentBackend(
     this.config, {
@@ -42,6 +47,7 @@ class LocalAgentBackend implements AgentBackend {
     _refreshBranches();
     _branchTimer = Timer.periodic(branchRefresh, (_) => _refreshBranches());
     for (final id in [..._agents.keys]) {
+      _discoverOptions(id);
       _startNextTask(id);
     }
   }
@@ -60,6 +66,8 @@ class LocalAgentBackend implements AgentBackend {
   final _tasks = <String, AgentTask>{};
   final _messages = <String, List<ChatMessage>>{};
   final _todoLists = <String, TodoList>{};
+  final _options = <String, AgentOptions>{};
+  final _discovering = <String>{};
   final _turns = <String, AgentTurn>{};
   final _turnChats = <String, String>{};
   final _testing = <String>{};
@@ -126,7 +134,19 @@ class LocalAgentBackend implements AgentBackend {
         workingDir: old?.workingDir ?? _projectPath(projectId),
         branch: old?.branch,
         currentTaskId: interrupted ? null : old?.currentTaskId,
+        model: old?.model,
+        effort: old?.effort,
+        activeModel: old?.activeModel,
+        usage: old?.usage,
       );
+    }
+
+    // Until each CLI answers, offer what it offered last time.
+    for (final e in saved?['options'] as List? ?? const []) {
+      final options = AgentOptions.fromJson(e as Json);
+      if (_agents.containsKey(options.agentId)) {
+        _options[options.agentId] = options;
+      }
     }
 
     for (final e in saved?['chats'] as List? ?? const []) {
@@ -198,6 +218,7 @@ class LocalAgentBackend implements AgentBackend {
         e.key: [for (final m in e.value) m.toJson()],
     },
     'todoLists': [for (final l in _todoLists.values) l.toJson()],
+    'options': [for (final o in _options.values) o.toJson()],
   };
 
   String _nextId(String prefix) => '$prefix-${++_idCounter}';
@@ -362,10 +383,19 @@ class LocalAgentBackend implements AgentBackend {
       _watch(() => List.unmodifiable(_todoLists.values));
 
   @override
+  Stream<List<AgentOptions>> watchAgentOptions() =>
+      _watch(() => List.unmodifiable(_options.values));
+
+  @override
   Future<void> sendPrompt(String chatId, String text) async {
     final chat = _requireChat(chatId);
     final agent = _requireAgent(chat.agentId);
     _addMessage(chatId, MessageRole.user, text);
+    final command = parseSlashCommand(text);
+    if (command != null && await _runBuiltin(chatId, agent, command)) {
+      _notify();
+      return;
+    }
     if (_turns.containsKey(agent.id)) {
       _addMessage(
         chatId,
@@ -427,10 +457,101 @@ class LocalAgentBackend implements AgentBackend {
 
   @override
   Future<void> clearMessages(String chatId) async {
-    _requireChat(chatId);
+    final chat = _requireChat(chatId);
     _messages[chatId] = [];
     _sessions.remove(chatId);
+    _chats[chatId] = chat.copyWith(context: () => null);
     _notify();
+  }
+
+  @override
+  Future<void> setAgentModel(
+    String agentId, {
+    String? model,
+    EffortLevel? effort,
+  }) async {
+    _requireAgent(agentId);
+    if (_changeModel(agentId, model, effort) case final note?) {
+      _addMessage(_turnChats[agentId]!, MessageRole.system, note);
+    }
+    _notify();
+  }
+
+  /// Stores the agent's model and effort and hands any change to its running
+  /// turn. Returns a line saying when that turn picks the change up, or null
+  /// when there is no turn to tell.
+  String? _changeModel(String agentId, String? model, EffortLevel? effort) {
+    final agent = _agents[agentId]!;
+    final updated = agent.copyWith(model: () => model, effort: () => effort);
+    _agents[agentId] = updated;
+    final turn = _turns[agentId];
+    if (turn == null) return null;
+    final live = [
+      if (model != agent.model) turn.apply(ModelChange(model)),
+      if (effort != agent.effort) turn.apply(EffortChange(effort)),
+    ];
+    if (live.isEmpty) return null;
+    final name = describeModel(updated, _options[agentId]);
+    return live.every((applied) => applied)
+        ? 'Switched to $name from the next step'
+        : 'Switched to $name from the next turn';
+  }
+
+  /// Answers `/clear`, `/model` and `/effort` without starting a turn, so
+  /// the model can change while the agent works. Returns whether [command]
+  /// was one of them.
+  Future<bool> _runBuiltin(
+    String chatId,
+    Agent agent,
+    SlashInvocation command,
+  ) async {
+    if (command.name == BuiltinCommands.clear) {
+      if (_turnChats[agent.id] == chatId) {
+        _addMessage(
+          chatId,
+          MessageRole.system,
+          '${agent.name} is still working in this chat. Wait for it or stop '
+          'it first.',
+        );
+        return true;
+      }
+      await clearMessages(chatId);
+      _addMessage(chatId, MessageRole.system, 'Started a new conversation');
+      return true;
+    }
+    final settings = resolveSettingsCommand(command, agent, _options[agent.id]);
+    if (settings == null) return false;
+    final note = settings.changed
+        ? _changeModel(agent.id, settings.model, settings.effort)
+        : null;
+    _addMessage(chatId, MessageRole.system, note ?? settings.message);
+    return true;
+  }
+
+  /// Asks the agent's CLI for its models and commands, in the agent's
+  /// folder so project commands are included.
+  Future<void> _discoverOptions(String agentId) async {
+    final agent = _agents[agentId];
+    if (agent == null || !_discovering.add(agentId)) return;
+    try {
+      final found = await _runners[agentId]!.discover(
+        _workingDirOf(agent) ?? _scratchDir,
+      );
+      if (_disposed) return;
+      final old = _options[agentId];
+      _options[agentId] = AgentOptions(
+        agentId: agentId,
+        models: found.models.isEmpty ? old?.models ?? const [] : found.models,
+        commands: found.commands.isEmpty
+            ? old?.commands ?? const []
+            : found.commands,
+      );
+      _notify();
+    } on Object catch (e) {
+      stderr.writeln('Could not list the options of $agentId: $e');
+    } finally {
+      _discovering.remove(agentId);
+    }
   }
 
   @override
@@ -478,7 +599,9 @@ class LocalAgentBackend implements AgentBackend {
   Future<void> setAgentProjects(String agentId, List<String> projectIds) async {
     final agent = _requireAgent(agentId);
     for (final id in projectIds) {
-      if (!_projects.containsKey(id)) throw ArgumentError('Unknown project $id');
+      if (!_projects.containsKey(id)) {
+        throw ArgumentError('Unknown project $id');
+      }
     }
     final ids = List<String>.unmodifiable(projectIds.toSet());
     for (final id in ids.where((id) => !agent.projectIds.contains(id))) {
@@ -766,10 +889,14 @@ class LocalAgentBackend implements AgentBackend {
   }) {
     final now = DateTime.now();
     final session = _sessions[chatId];
+    final option = _options[agent.id]?.model(agent.model);
     final turn = _runners[agent.id]!.start(
       prompt: prompt,
       workingDir: dir,
       sessionId: session != null && session.dir == dir ? session.id : null,
+      model: agent.model,
+      // A model without effort levels would reject the flag.
+      effort: option != null && option.efforts.isEmpty ? null : agent.effort,
     );
     _turns[agent.id] = turn;
     _turnChats[agent.id] = chatId;
@@ -851,6 +978,35 @@ class LocalAgentBackend implements AgentBackend {
       case ReplyEvent(:final text):
         _addMessage(chatId, MessageRole.agent, text);
         _agents[agentId] = agent.copyWith(lastActive: now);
+      case NoticeEvent(:final text):
+        _addMessage(chatId, MessageRole.system, text);
+      case ModelEvent(:final model):
+        _agents[agentId] = agent.copyWith(activeModel: model);
+      case UsageEvent(:final usage):
+        _shareUsage(agentId, usage);
+      case ContextEvent(:final usedTokens, :final maxTokens):
+        if (_chats[chatId] case final chat?) {
+          final old = chat.context;
+          _chats[chatId] = chat.copyWith(
+            context: () => ContextUsage(
+              usedTokens: usedTokens ?? old?.usedTokens ?? 0,
+              maxTokens: maxTokens ?? old?.maxTokens ?? _guessWindow(agent),
+              updatedAt: now,
+            ),
+          );
+        }
+      case CommandsEvent(:final names):
+        final options = _options[agentId] ?? AgentOptions(agentId: agentId);
+        final known = {for (final c in options.commands) c.name};
+        final added = names.where((n) => !known.contains(n)).toList();
+        if (added.isNotEmpty) {
+          _options[agentId] = options.copyWith(
+            commands: [
+              ...options.commands,
+              for (final n in added) SlashCommand(n),
+            ],
+          );
+        }
       case StepsEvent(:final steps):
         if (task != null && steps.isNotEmpty) {
           final done = steps.where((s) => s.done).length;
@@ -918,8 +1074,37 @@ class LocalAgentBackend implements AgentBackend {
     );
 
     if (ok && task != null) _runTests(task.projectId, agent.id);
+    // The CLI works now, so it can list its models if it couldn't before.
+    if (ok && (_options[agent.id]?.models.isEmpty ?? true)) {
+      _discoverOptions(agent.id);
+    }
     _refreshBranches();
     scheduleMicrotask(() => _startNextTask(agent.id));
+  }
+
+  /// Usage limits belong to the account, which every agent running the same
+  /// CLI program on this PC shares.
+  void _shareUsage(String agentId, UsageLimits usage) {
+    final source = _runnerConfig(agentId);
+    for (final id in [..._agents.keys]) {
+      final other = _runnerConfig(id);
+      if (id == agentId ||
+          (other?.type == source?.type &&
+              other?.executable == source?.executable)) {
+        _agents[id] = _agents[id]!.copyWith(usage: usage);
+      }
+    }
+  }
+
+  AgentConfig? _runnerConfig(String agentId) =>
+      config.agents.where((a) => a.id == agentId).firstOrNull;
+
+  /// The context window until the CLI reports it: 1M for the models that
+  /// say so in their id, else Claude's usual 200k.
+  int _guessWindow(Agent agent) {
+    final option = _options[agent.id]?.model(agent.model);
+    final id = option?.resolved ?? agent.model ?? '';
+    return id.contains('[1m]') ? 1000000 : 200000;
   }
 
   /// Cancels the agent's running turn, putting its task back as [requeueAs].

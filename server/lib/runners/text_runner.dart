@@ -1,3 +1,5 @@
+import 'package:agent_core/agent_core.dart';
+
 import '../config.dart';
 import 'agent_runner.dart';
 
@@ -10,6 +12,7 @@ class TextRunner extends CliRunner {
   TextRunner._({
     required super.executable,
     required super.extraArgs,
+    required super.models,
     required this.buildArgs,
     this.promptViaFile = false,
   });
@@ -18,24 +21,35 @@ class TextRunner extends CliRunner {
   factory TextRunner.gemini(AgentConfig config) => TextRunner._(
     executable: config.executable ?? 'gemini',
     extraArgs: config.extraArgs,
-    buildArgs: (_, extra) => extra,
+    models: config.models,
+    buildArgs: (_, model, extra) => [
+      if (model != null) ...['--model', model],
+      ...extra,
+    ],
   );
 
   /// Aider takes the prompt as a file and exits after answering.
   factory TextRunner.aider(AgentConfig config) => TextRunner._(
     executable: config.executable ?? 'aider',
     extraArgs: config.extraArgs,
+    models: config.models,
     promptViaFile: true,
-    buildArgs: (file, extra) => [
+    buildArgs: (file, model, extra) => [
       '--message-file',
       file!,
       '--no-pretty',
       '--no-stream',
+      if (model != null) ...['--model', model],
       ...extra,
     ],
   );
 
-  final List<String> Function(String? promptFile, List<String> extra) buildArgs;
+  final List<String> Function(
+    String? promptFile,
+    String? model,
+    List<String> extra,
+  )
+  buildArgs;
 
   @override
   final bool promptViaFile;
@@ -45,9 +59,14 @@ class TextRunner extends CliRunner {
   static const _maxReply = 8000;
 
   @override
-  List<String> argsFor({String? sessionId, String? promptFile}) {
+  List<String> argsFor({
+    String? sessionId,
+    String? promptFile,
+    String? model,
+    EffortLevel? effort,
+  }) {
     _output.clear();
-    return buildArgs(promptFile, extraArgs);
+    return buildArgs(promptFile, model, extraArgs);
   }
 
   @override

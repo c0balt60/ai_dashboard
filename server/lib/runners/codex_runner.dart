@@ -17,17 +17,24 @@ class CodexRunner extends CliRunner {
     : super(
         executable: config.executable ?? 'codex',
         extraArgs: config.extraArgs,
+        models: config.models,
       );
 
   String? _lastError;
 
   @override
-  List<String> argsFor({String? sessionId, String? promptFile}) {
+  List<String> argsFor({
+    String? sessionId,
+    String? promptFile,
+    String? model,
+    EffortLevel? effort,
+  }) {
     _lastError = null;
     return [
       'exec',
       '--json',
       '--skip-git-repo-check',
+      if (model != null) ...['--model', model],
       ...extraArgs,
       if (sessionId != null) ...['resume', sessionId],
       '-',

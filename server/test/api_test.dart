@@ -95,6 +95,29 @@ void main() {
     expect(bad.statusCode, 400);
   });
 
+  test(
+    'the model and effort can be picked and bad levels are refused',
+    () async {
+      final picked = await http.put(
+        base.resolve(ApiPaths.agentModel('a1')),
+        headers: auth(),
+        body: jsonEncode({'model': 'sonnet', 'effort': 'low'}),
+      );
+      expect(picked.statusCode, 200);
+      final agent = (await backend.watchAgents().first).firstWhere(
+        (a) => a.id == 'a1',
+      );
+      expect((agent.model, agent.effort), ('sonnet', EffortLevel.low));
+
+      final bad = await http.put(
+        base.resolve(ApiPaths.agentModel('a1')),
+        headers: auth(),
+        body: jsonEncode({'model': 'sonnet', 'effort': 'turbo'}),
+      );
+      expect(bad.statusCode, 400);
+    },
+  );
+
   test('the WebSocket streams snapshots for subscribed topics', () async {
     final channel = IOWebSocketChannel.connect(
       base.replace(
