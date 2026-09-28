@@ -73,3 +73,30 @@ class SheetHeader extends StatelessWidget {
     );
   }
 }
+
+/// A whole sheet that only explains why there is nothing to show, e.g. when
+/// what it was opened for is gone.
+class SheetNotice extends StatelessWidget {
+  const SheetNotice(this.title, this.message, {super.key});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SheetHeader(title, padding: const EdgeInsets.fromLTRB(24, 0, 16, 0)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Text(message),
+          ),
+        ],
+      ),
+    );
+  }
+}

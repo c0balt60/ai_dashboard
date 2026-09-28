@@ -54,10 +54,15 @@ class AgentCard extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
-                agent.type.label,
+                agent.model == null && agent.activeModel == null
+                    ? agent.type.label
+                    : '${agent.type.label} · '
+                          '${describeModel(agent, ref.watch(agentOptionsProvider(agent.id)))}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -72,9 +77,8 @@ class AgentCard extends ConsumerWidget {
         child: InkWell(
           onTap:
               onTap ??
-              () => context.push(
-                AppRoutes.agent(agent.id, projectId: projectId),
-              ),
+              () =>
+                  context.push(AppRoutes.agent(agent.id, projectId: projectId)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(

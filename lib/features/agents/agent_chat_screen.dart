@@ -16,6 +16,8 @@ import '../../widgets/layout.dart';
 import '../../widgets/prompt_bar.dart';
 import '../../widgets/sheets/app_sheet.dart';
 import '../../widgets/sheets/assign_agent_sheet.dart';
+import '../../widgets/sheets/model_sheet.dart';
+import '../../widgets/sheets/usage_sheet.dart';
 import '../../widgets/status/agent_avatar.dart';
 import '../../widgets/status/status_badge.dart';
 import '../../widgets/status/status_visuals.dart';
@@ -225,6 +227,7 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
     }
 
     final theme = Theme.of(context);
+    final options = ref.watch(agentOptionsProvider(agent.id));
     final chat = _resolveChat();
     final chatId = _chatIdOf(chat);
     final projectId = chat == null ? _projectId : chat.projectId;
@@ -384,6 +387,16 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                 hint: project == null
                     ? 'Ask ${agent.name} anything…'
                     : 'Ask ${agent.name} about ${project.name}…',
+                modelLabel: describeModel(agent, options),
+                context: chat?.context,
+                commands: options?.commands ?? const [],
+                onModel: () => showModelSheet(context, agentId: agent.id),
+                onUsage: () => showUsageSheet(
+                  context,
+                  agentId: agent.id,
+                  chatId: chatId,
+                  onSend: _send,
+                ),
                 onSend: _send,
                 onSwitchAgent: () =>
                     _showAgentSwitcher(context, agent.id, projectId: projectId),
@@ -1187,12 +1200,18 @@ class _TypingIndicatorState extends State<_TypingIndicator>
 }
 
 /// Quick-prompt chips above a large rounded composer card: the message field
-/// on top, a round assign button and the send button below. On desktop and
-/// web, Enter sends and Shift+Enter inserts a newline; on phones Enter always
-/// inserts a newline.
+/// on top, then round assign and slash-command buttons, the model and effort
+/// picker, the context meter and the send button. Typing `/` lists the
+/// agent's slash commands above the card. On desktop and web, Enter sends and
+/// Shift+Enter inserts a newline; on phones Enter always inserts a newline.
 class _Composer extends StatefulWidget {
   const _Composer({
     required this.hint,
+    required this.modelLabel,
+    required this.context,
+    required this.commands,
+    required this.onModel,
+    required this.onUsage,
     required this.onSend,
     required this.onSwitchAgent,
     required this.onAssign,
@@ -1200,6 +1219,11 @@ class _Composer extends StatefulWidget {
   });
 
   final String hint;
+  final String modelLabel;
+  final ContextUsage? context;
+  final List<SlashCommand> commands;
+  final VoidCallback onModel;
+  final VoidCallback onUsage;
   final ValueChanged<String> onSend;
   final VoidCallback onSwitchAgent;
   final VoidCallback onAssign;
@@ -1222,6 +1246,29 @@ class _ComposerState extends State<_Composer> {
     onKeyEvent: submitOnEnter(_controller, _submit),
   );
 
+  /// The matching commands float above the card in an overlay, so they never
+  /// push the chat past the space left by the keyboard.
+  final _commandList = OverlayPortalController();
+  final _cardLink = LayerLink();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_syncCommandList);
+  }
+
+  @override
+  void didUpdateWidget(_Composer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncCommandList();
+  }
+
+  void _syncCommandList() {
+    final show = _matches(_controller.text).isNotEmpty;
+    if (show == _commandList.isShowing) return;
+    show ? _commandList.show() : _commandList.hide();
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -1234,6 +1281,41 @@ class _ComposerState extends State<_Composer> {
     if (text.isEmpty) return;
     widget.onSend(text);
     _controller.clear();
+  }
+
+  /// Types a `/` where the cursor is, which opens the command list.
+  void _startCommand() {
+    final value = _controller.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : start;
+    _controller.value = TextEditingValue(
+      text: value.text.replaceRange(start, end, '/'),
+      selection: TextSelection.collapsed(offset: start + 1),
+    );
+    _focus.requestFocus();
+  }
+
+  void _pickCommand(SlashCommand command) {
+    final text = '/${command.name} ';
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _focus.requestFocus();
+  }
+
+  /// The commands matching a `/name` being typed, names starting with it
+  /// first. Empty once the name is followed by a space.
+  List<SlashCommand> _matches(String text) {
+    if (!text.startsWith('/') || text.contains(RegExp(r'\s'))) return const [];
+    final query = text.substring(1).toLowerCase();
+    return [
+      ...widget.commands.where((c) => c.name.startsWith(query)),
+      ...widget.commands.where(
+        (c) => !c.name.startsWith(query) && c.name.contains(query),
+      ),
+    ];
   }
 
   @override
@@ -1256,106 +1338,316 @@ class _ComposerState extends State<_Composer> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.showQuickPrompts) ...[
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      ActionChip(
-                        tooltip: 'Switch agent',
-                        padding: const EdgeInsets.all(10),
-                        label: Icon(
-                          Icons.auto_awesome_outlined,
-                          size: 20,
-                          color: scheme.onSurface,
-                        ),
-                        onPressed: widget.onSwitchAgent,
-                      ),
-                      for (final label in _quickPrompts)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: ActionChip(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 10,
+              ValueListenableBuilder(
+                valueListenable: _controller,
+                builder: (context, value, _) {
+                  if (!widget.showQuickPrompts ||
+                      _matches(value.text).isNotEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          ActionChip(
+                            tooltip: 'Switch agent',
+                            padding: const EdgeInsets.all(10),
+                            label: Icon(
+                              Icons.auto_awesome_outlined,
+                              size: 20,
+                              color: scheme.onSurface,
                             ),
-                            label: Text(label, style: chipLabel),
-                            onPressed: () => widget.onSend(label),
+                            onPressed: widget.onSwitchAgent,
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
+                          for (final label in _quickPrompts)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: ActionChip(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 10,
+                                ),
+                                label: Text(label, style: chipLabel),
+                                onPressed: () => widget.onSend(label),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: PromptBarFrame(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: _controller,
-                        focusNode: _focus,
-                        minLines: 1,
-                        maxLines: 5,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        style: theme.textTheme.bodyLarge,
-                        decoration: InputDecoration(
-                          hintText: widget.hint,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding: const EdgeInsets.fromLTRB(
-                            12,
-                            12,
-                            12,
-                            8,
-                          ),
-                        ),
-                      ),
-                      Row(
+                child: CompositedTransformTarget(
+                  link: _cardLink,
+                  child: OverlayPortal(
+                    controller: _commandList,
+                    overlayChildBuilder: _buildCommandList,
+                    child: PromptBarFrame(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          IconButton.outlined(
-                            style: outlined,
-                            tooltip: 'Assign to folder / task',
-                            onPressed: widget.onAssign,
-                            icon: const Icon(Icons.add),
+                          TextField(
+                            controller: _controller,
+                            focusNode: _focus,
+                            minLines: 1,
+                            maxLines: 5,
+                            keyboardType: TextInputType.multiline,
+                            textCapitalization: TextCapitalization.sentences,
+                            style: theme.textTheme.bodyLarge,
+                            decoration: InputDecoration(
+                              hintText: widget.hint,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              filled: false,
+                              contentPadding: const EdgeInsets.fromLTRB(
+                                12,
+                                12,
+                                12,
+                                8,
+                              ),
+                            ),
                           ),
-                          const Spacer(),
-                          ValueListenableBuilder(
-                            valueListenable: _controller,
-                            builder: (context, value, _) {
-                              final tooltip = enterSubmitsPrompt
-                                  ? 'Send (Enter)'
-                                  : 'Send';
-                              const icon = Icon(Icons.arrow_upward);
-                              return value.text.trim().isEmpty
-                                  ? IconButton.outlined(
-                                      style: outlined,
-                                      tooltip: tooltip,
-                                      onPressed: null,
-                                      icon: icon,
-                                    )
-                                  : IconButton.filled(
-                                      tooltip: tooltip,
-                                      onPressed: _submit,
-                                      icon: icon,
-                                    );
-                            },
+                          Row(
+                            children: [
+                              IconButton.outlined(
+                                style: outlined,
+                                tooltip: 'Assign to folder / task',
+                                onPressed: widget.onAssign,
+                                icon: const Icon(Icons.add),
+                              ),
+                              if (widget.commands.isNotEmpty)
+                                IconButton.outlined(
+                                  style: outlined,
+                                  tooltip: 'Slash commands',
+                                  onPressed: _startCommand,
+                                  icon: const Text(
+                                    '/',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              Expanded(
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: _ModelButton(
+                                    label: widget.modelLabel,
+                                    onPressed: widget.onModel,
+                                  ),
+                                ),
+                              ),
+                              _ContextButton(
+                                widget.context,
+                                onPressed: widget.onUsage,
+                              ),
+                              ValueListenableBuilder(
+                                valueListenable: _controller,
+                                builder: (context, value, _) {
+                                  final tooltip = enterSubmitsPrompt
+                                      ? 'Send (Enter)'
+                                      : 'Send';
+                                  const icon = Icon(Icons.arrow_upward);
+                                  return value.text.trim().isEmpty
+                                      ? IconButton.outlined(
+                                          style: outlined,
+                                          tooltip: tooltip,
+                                          onPressed: null,
+                                          icon: icon,
+                                        )
+                                      : IconButton.filled(
+                                          tooltip: tooltip,
+                                          onPressed: _submit,
+                                          icon: icon,
+                                        );
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Pins the command list's bottom edge to the top of the composer card,
+  /// as wide as the card and at most a third of the room the keyboard leaves.
+  Widget _buildCommandList(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final room =
+        media.size.height - media.viewInsets.bottom - media.padding.top;
+    return CompositedTransformFollower(
+      link: _cardLink,
+      showWhenUnlinked: false,
+      targetAnchor: Alignment.topLeft,
+      followerAnchor: Alignment.bottomLeft,
+      child: Align(
+        alignment: Alignment.bottomLeft,
+        child: SizedBox(
+          width: _cardLink.leaderSize?.width,
+          child: ValueListenableBuilder(
+            valueListenable: _controller,
+            builder: (context, value, _) => _CommandList(
+              _matches(value.text),
+              onPick: _pickCommand,
+              maxHeight: math.min(260, room / 3),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The agent's slash commands matching what is typed, in a card above the
+/// composer. Tapping one fills it in, ready for its arguments.
+class _CommandList extends StatelessWidget {
+  const _CommandList(
+    this.commands, {
+    required this.onPick,
+    required this.maxHeight,
+  });
+
+  final List<SlashCommand> commands;
+  final ValueChanged<SlashCommand> onPick;
+  final double maxHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppSurfaces.of(context).card,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: ListView.builder(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            itemCount: commands.length,
+            itemBuilder: (context, i) {
+              final c = commands[i];
+              return ListTile(
+                title: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '/${c.name}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (c.argumentHint.isNotEmpty)
+                        TextSpan(
+                          text: '  ${c.argumentHint}',
+                          style: TextStyle(color: muted),
+                        ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: c.description.isEmpty
+                    ? null
+                    : Text(
+                        c.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                onTap: () => onPick(c),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill naming the agent's model and effort, e.g. "Opus 5.5 · High", that
+/// opens the picker.
+class _ModelButton extends StatelessWidget {
+  const _ModelButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Tooltip(
+      message: 'Model and effort',
+      child: TextButton(
+        style: TextButton.styleFrom(
+          foregroundColor: scheme.onSurface,
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        onPressed: onPressed,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                style: theme.textTheme.labelMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.expand_more, size: 16, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A ring showing how full the chat's context is, or a usage icon until the
+/// agent has reported it. Opens the usage sheet.
+class _ContextButton extends StatelessWidget {
+  const _ContextButton(this.usage, {required this.onPressed});
+
+  final ContextUsage? usage;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final used = usage;
+    if (used == null) {
+      return IconButton(
+        tooltip: 'Usage',
+        onPressed: onPressed,
+        icon: const Icon(Icons.data_usage),
+      );
+    }
+    final color = usageVisual(context, used.fraction).color;
+    return IconButton(
+      tooltip: 'Context ${(used.fraction * 100).round()}% used',
+      onPressed: onPressed,
+      icon: SizedBox.square(
+        dimension: 22,
+        child: CircularProgressIndicator(
+          value: used.fraction,
+          strokeWidth: 3,
+          color: color,
+          backgroundColor: color.withValues(alpha: 0.2),
         ),
       ),
     );

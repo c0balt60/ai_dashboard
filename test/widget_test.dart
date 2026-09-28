@@ -264,6 +264,45 @@ void main() {
     expect(find.text('portfolio-site · Add a sitemap'), findsOneWidget);
   });
 
+  testWidgets('the composer picks the model, completes commands and shows '
+      'usage', (tester) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(App)),
+    );
+    container.read(routerProvider).push(AppRoutes.agent('a1'));
+    await _pumpChat(tester);
+
+    await tester.tap(find.text('Opus 5.5 · High'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Model and effort'), findsOneWidget);
+    await tester.tap(find.text('Sonnet'));
+    await tester.tap(find.text('Max'));
+    await tester.pump(const Duration(milliseconds: 100));
+    final agent = container.read(agentProvider('a1'))!;
+    expect((agent.model, agent.effort), ('sonnet', EffortLevel.max));
+    Navigator.of(tester.element(find.text('Model and effort'))).pop();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Sonnet 5 · Max'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '/comp');
+    await tester.pump();
+    await tester.tap(find.textContaining('/compact', findRichText: true));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '/compact ',
+    );
+
+    await tester.tap(find.byTooltip('Context 71% used'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Usage limits'), findsOneWidget);
+    expect(find.text('Current session'), findsOneWidget);
+    expect(find.text('Compact now'), findsOneWidget);
+  });
+
   testWidgets('header button toggles between light and dark theme', (
     tester,
   ) async {

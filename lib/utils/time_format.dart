@@ -74,3 +74,12 @@ const _months = [
   'Nov',
   'Dec',
 ];
+
+/// "in 2h 40m" or "in 3d 5h" until [at], or "now" once it has passed.
+String timeUntil(DateTime at, {DateTime? now}) {
+  final d = at.difference(now ?? DateTime.now());
+  if (d.inMinutes < 1) return 'now';
+  if (d.inDays > 0) return 'in ${d.inDays}d ${d.inHours.remainder(24)}h';
+  if (d.inHours > 0) return 'in ${d.inHours}h ${d.inMinutes.remainder(60)}m';
+  return 'in ${d.inMinutes}m';
+}

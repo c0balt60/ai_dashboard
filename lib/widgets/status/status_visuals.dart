@@ -1,5 +1,6 @@
 /// Single source of truth for how each agent status, task state, test status,
-/// to-do due date and PC connection state looks (label, icon, color).
+/// to-do due date, PC connection state and usage level looks (label, icon,
+/// color).
 library;
 
 import 'package:flutter/material.dart';
@@ -158,5 +159,16 @@ extension AgentTypeVisual on AgentType {
     AgentType.codex => Icons.code,
     AgentType.geminiCli => Icons.diamond_outlined,
     AgentType.aider => Icons.terminal,
+  };
+}
+
+/// How a context window or usage limit that is [fraction] used up (0 to 1)
+/// looks: calm while plenty is left, a warning from 70% and failed from 90%.
+StatusVisual usageVisual(BuildContext context, double fraction) {
+  final c = StatusColors.of(context);
+  return switch (fraction) {
+    >= 0.9 => StatusVisual('Almost used up', Icons.error_outline, c.failed),
+    >= 0.7 => StatusVisual('Running low', Icons.warning_amber, c.waiting),
+    _ => StatusVisual('Plenty left', Icons.check_circle_outline, c.completed),
   };
 }
