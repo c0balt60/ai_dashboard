@@ -27,6 +27,7 @@ abstract final class AppRoutes {
   static const settings = '/settings';
 
   static String project(String id) => '/project/$id';
+
   /// An agent's chat: [chatId] if given, else its latest chat in [projectId],
   /// else its latest chat overall.
   static String agent(String id, {String? chatId, String? projectId}) =>
@@ -50,10 +51,8 @@ abstract final class AppRoutes {
     'item': ?todoItemId,
   });
 
-  static String _withQuery(String path, Map<String, String> query) => Uri(
-    path: path,
-    queryParameters: query.isEmpty ? null : query,
-  ).toString();
+  static String _withQuery(String path, Map<String, String> query) =>
+      Uri(path: path, queryParameters: query.isEmpty ? null : query).toString();
 
   static String todoList(String id) => '/list/$id';
 }

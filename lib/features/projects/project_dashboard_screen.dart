@@ -328,11 +328,7 @@ class _OverviewTab extends ConsumerWidget {
           ResponsiveGrid(
             children: [
               for (final agent in agents)
-                AgentCard(
-                  agent,
-                  key: ValueKey(agent.id),
-                  projectId: projectId,
-                ),
+                AgentCard(agent, key: ValueKey(agent.id), projectId: projectId),
             ],
           ),
         SectionHeader(
