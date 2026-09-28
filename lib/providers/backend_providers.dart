@@ -84,6 +84,17 @@ final messagesProvider = StreamProvider.family<List<ChatMessage>, String>(
   (ref, chatId) => ref.watch(backendProvider).watchMessages(chatId),
 );
 
+/// What each agent's CLI offers: its models and slash commands.
+final agentOptionsListProvider = StreamProvider<List<AgentOptions>>(
+  (ref) => ref.watch(backendProvider).watchAgentOptions(),
+);
+
+/// One agent's models and slash commands, or null until the PC lists them.
+final agentOptionsProvider = Provider.family<AgentOptions?, String>((ref, id) {
+  final all = ref.watch(agentOptionsListProvider).value ?? const [];
+  return all.where((o) => o.agentId == id).firstOrNull;
+});
+
 final agentProvider = Provider.family<Agent?, String>((ref, id) {
   final agents = ref.watch(agentsProvider).value ?? const [];
   return agents.where((a) => a.id == id).firstOrNull;

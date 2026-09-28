@@ -77,6 +77,15 @@ void main() {
     );
     expect(item.dueDate, DateTime(2030, 1, 15));
 
+    final options = await backend.watchAgentOptions().first;
+    expect(options.firstWhere((o) => o.agentId == 'a1').models, isNotEmpty);
+    await backend.setAgentModel('a1', model: 'haiku');
+    final claude = (await mock.watchAgents().first).firstWhere(
+      (a) => a.id == 'a1',
+    );
+    expect(claude.model, 'haiku');
+    expect(claude.effort, isNull);
+
     expect(await backend.runCommand('p1', 'git status'), isNotEmpty);
     expect(await backend.ping(), isA<Duration>());
   });

@@ -233,6 +233,10 @@ class HttpAgentBackend implements AgentBackend {
       _watch(Topics.todoLists, TodoList.fromJson);
 
   @override
+  Stream<List<AgentOptions>> watchAgentOptions() =>
+      _watch(Topics.agentOptions, AgentOptions.fromJson);
+
+  @override
   Future<void> sendPrompt(String chatId, String text) =>
       _request('POST', ApiPaths.prompt(chatId), body: {'text': text});
 
@@ -275,6 +279,17 @@ class HttpAgentBackend implements AgentBackend {
     'POST',
     ApiPaths.assign(agentId),
     body: {'projectId': projectId, 'workingDir': workingDir, 'taskId': ?taskId},
+  );
+
+  @override
+  Future<void> setAgentModel(
+    String agentId, {
+    String? model,
+    EffortLevel? effort,
+  }) => _request(
+    'PUT',
+    ApiPaths.agentModel(agentId),
+    body: {'model': model, 'effort': effort?.name},
   );
 
   @override
