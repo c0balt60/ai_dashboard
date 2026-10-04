@@ -524,8 +524,8 @@ class MockSeed {
       'a4',
       'p4',
       'Flaky tests',
-      _ago(hours: 1),
-      _ago(minutes: 20),
+      _ago(hours: 2),
+      _ago(minutes: 70),
       contextTokens: 61300,
     ),
     _chat(

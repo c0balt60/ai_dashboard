@@ -25,6 +25,17 @@ import 'chat_markdown.dart';
 
 const _chatMaxWidth = 820.0;
 
+/// Claude Code caches a conversation for an hour after its last request.
+/// Once that lapses, the next prompt sends the whole context again at the
+/// cache-write price, which is the main cost of returning to a long chat.
+const _cacheTtl = Duration(hours: 1);
+const _coldContextTokens = 50000;
+
+bool _isCold(ContextUsage? context) =>
+    context != null &&
+    context.usedTokens >= _coldContextTokens &&
+    DateTime.now().difference(context.updatedAt) > _cacheTtl;
+
 /// Full-screen chat with one agent: what it is working on, a greeting with
 /// suggestions while the chat is empty, the conversation, and a composer for
 /// new prompts.
@@ -60,6 +71,8 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
 
   /// A new chat in [_projectId] that is created on the first prompt.
   bool _draft = false;
+
+  String? _dismissedColdChat;
 
   @override
   void dispose() {
@@ -383,6 +396,24 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                         ),
                 ),
               ),
+              if (chatId != null &&
+                  chatId != _dismissedColdChat &&
+                  agent.status != AgentStatus.running &&
+                  _isCold(chat?.context))
+                ContentWidth(
+                  maxWidth: _chatMaxWidth,
+                  child: _ColdCacheBanner(
+                    usedTokens: chat!.context!.usedTokens,
+                    onNewChat: () => _startDraft(projectId),
+                    onCompact:
+                        options?.commands.any((c) => c.name == 'compact') ??
+                            false
+                        ? () => _send('/compact')
+                        : null,
+                    onDismiss: () =>
+                        setState(() => _dismissedColdChat = chatId),
+                  ),
+                ),
               _Composer(
                 hint: project == null
                     ? 'Ask ${agent.name} anything…'
@@ -429,6 +460,79 @@ class _MenuRow extends StatelessWidget {
         const SizedBox(width: 12),
         Flexible(child: Text(label)),
       ],
+    );
+  }
+}
+
+/// Shown above the composer when the chat's cache has expired, offering the
+/// cheaper ways back in before the next prompt re-sends the whole context.
+class _ColdCacheBanner extends StatelessWidget {
+  const _ColdCacheBanner({
+    required this.usedTokens,
+    required this.onNewChat,
+    this.onCompact,
+    required this.onDismiss,
+  });
+
+  final int usedTokens;
+  final VoidCallback onNewChat;
+  final VoidCallback? onCompact;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = StatusColors.of(context).waiting;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Material(
+        color: AppSurfaces.of(context).tint(accent, theme.brightness),
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 4, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.savings_outlined, size: 20, color: accent),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Idle for over an hour, so the next prompt re-sends '
+                      'all ${formatTokens(usedTokens)} tokens of this chat.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Send anyway',
+                    onPressed: onDismiss,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  children: [
+                    if (onCompact != null)
+                      OutlinedButton(
+                        onPressed: onCompact,
+                        child: const Text('Compact'),
+                      ),
+                    FilledButton.tonal(
+                      onPressed: onNewChat,
+                      child: const Text('New chat'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

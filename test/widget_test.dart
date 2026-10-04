@@ -184,6 +184,7 @@ void main() {
     expect(find.textContaining('Hides real bugs'), findsOneWidget);
     expect(find.textContaining('**'), findsNothing);
     expect(find.textContaining('```'), findsNothing);
+    expect(find.textContaining('re-sends all'), findsOneWidget);
   });
 
   testWidgets('new task page creates a queued task for the chosen agent', (
