@@ -35,6 +35,13 @@ void main() {
     for (final list in seed.messages.values) {
       for (final m in list) {
         expectRoundTrip(m, (v) => v.toJson(), ChatMessage.fromJson);
+        if (m.isOpenQuestion) {
+          expectRoundTrip(
+            m.copyWith(answers: () => {m.questions.first.question: 'Yes'}),
+            (v) => v.toJson(),
+            ChatMessage.fromJson,
+          );
+        }
       }
     }
     for (final l in seed.todoLists) {

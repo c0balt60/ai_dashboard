@@ -656,6 +656,24 @@ class MockSeed {
     DateTime at,
   ) => ChatMessage(id: id, agentId: agentId, role: role, text: text, at: at);
 
+  static const _testPlanQuestions = [
+    AgentQuestion(
+      question: 'Should I write the 12 checkout tests from the plan?',
+      header: 'Test plan',
+      options: [
+        QuestionOption(
+          'Go ahead',
+          description: 'Write all 12 cases as drafted',
+        ),
+        QuestionOption(
+          'Add edge cases',
+          description: 'Also cover currency rounding and partial refunds',
+        ),
+        QuestionOption('Skip card failures', description: 'Leave those to QA'),
+      ],
+    ),
+  ];
+
   /// Keyed by chat id.
   late final Map<String, List<ChatMessage>> messages = {
     'c5': [
@@ -696,6 +714,21 @@ class MockSeed {
         MessageRole.agent,
         "On it. I'll add a /webhooks/stripe route, verify signatures with the signing secret from .env, and handle checkout.session.completed.",
         _ago(hours: 2),
+      ),
+      ChatMessage(
+        id: 'm3t',
+        agentId: 'a1',
+        role: MessageRole.thinking,
+        text: '',
+        at: _ago(hours: 1, minutes: 50),
+        steps: const [
+          'Searching the code',
+          'Reading routes.ts',
+          'The router mounts every file in `src/routes`, so a new '
+              '`webhooks.ts` is picked up on its own.',
+          'Editing webhooks.ts',
+          'Running: npm test',
+        ],
       ),
       _msg(
         'm4',
@@ -738,8 +771,16 @@ class MockSeed {
         'm8',
         'a3',
         MessageRole.agent,
-        'I drafted a test plan for the checkout flow: 12 cases covering discounts, taxes and card failures. Should I proceed?',
+        'I drafted a test plan for the checkout flow: 12 cases covering discounts, taxes and card failures.',
         _ago(minutes: 20),
+      ),
+      ChatMessage(
+        id: 'm8q',
+        agentId: 'a3',
+        role: MessageRole.question,
+        text: describeQuestions(_testPlanQuestions),
+        at: _ago(minutes: 20),
+        questions: _testPlanQuestions,
       ),
     ],
     'c4': [

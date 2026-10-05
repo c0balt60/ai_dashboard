@@ -14,8 +14,26 @@ void main() {
 
     await sending;
     final messages = await backend.watchMessages('a5').first;
-    expect(messages.map((m) => m.role), [MessageRole.user, MessageRole.agent]);
+    expect(messages.map((m) => m.role), [
+      MessageRole.user,
+      MessageRole.thinking,
+      MessageRole.agent,
+    ]);
     expect((await aider()).status, AgentStatus.waiting);
+
+    await backend.sendPrompt('a5', 'Help me plan my next feature');
+    final question = (await backend.watchMessages('a5').first).last;
+    expect(question.isOpenQuestion, isTrue);
+    expect((await aider()).status, AgentStatus.waiting);
+    await backend.answerQuestion('a5', question.id, {
+      for (final q in question.questions) q.question: q.options.first.label,
+    });
+    final answered = await backend.watchMessages('a5').first;
+    expect(
+      answered.firstWhere((m) => m.id == question.id).answers,
+      hasLength(2),
+    );
+    expect(answered.last.role, MessageRole.agent);
   });
 
   test('project chats keep their own history and move the agent', () async {
@@ -31,7 +49,7 @@ void main() {
       'Explain the build setup',
       reason: 'the first prompt names an untitled chat',
     );
-    expect(await backend.watchMessages(chat.id).first, hasLength(2));
+    expect(await backend.watchMessages(chat.id).first, hasLength(3));
     expect(await backend.watchMessages('a5').first, isEmpty);
     final aider = (await backend.watchAgents().first).firstWhere(
       (a) => a.id == 'a5',

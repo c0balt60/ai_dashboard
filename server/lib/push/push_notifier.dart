@@ -188,22 +188,31 @@ class PushNotifier {
           ),
         );
       }
-      if (pending.turnEnded &&
-          !pending.taskTurn &&
-          pending.error == null &&
-          wanted.contains(PushEvent.replied)) {
-        if (await _replyMessage(agent) case final reply?) {
+      final latest = pending.turnEnded && pending.error == null
+          ? await _latestChat(agent)
+          : null;
+      final question = switch (latest) {
+        (final chat, [..., final last]) when last.isOpenQuestion =>
+          _questionMessage(agent, chat, last),
+        _ => null,
+      };
+      if (question != null) {
+        candidates[PushEvent.asked] = question;
+      } else if (latest != null && !pending.taskTurn) {
+        if (_replyMessage(agent, latest.$1, latest.$2) case final reply?) {
           candidates[PushEvent.replied] = reply;
         }
       }
       final current = _agents?[key] ?? agent;
       if (current.status != AgentStatus.running) {
-        candidates[PushEvent.waiting] = PushMessage(
-          title: '${agent.name} is waiting for you',
-          body: truncate(current.activity, 200),
-          tag: agent.id,
-          data: {'agentId': agent.id},
-        );
+        candidates[PushEvent.waiting] =
+            question ??
+            PushMessage(
+              title: '${agent.name} is waiting for you',
+              body: truncate(current.activity, 200),
+              tag: agent.id,
+              data: {'agentId': agent.id},
+            );
       }
     }
     if (candidates.isEmpty) return;
@@ -231,8 +240,8 @@ class PushNotifier {
     );
   }
 
-  /// The last answer in the agent's most recently active chat.
-  Future<PushMessage?> _replyMessage(Agent agent) async {
+  /// The agent's most recently active chat and its messages.
+  Future<(AgentChat, List<ChatMessage>)?> _latestChat(Agent agent) async {
     final chats = await backend.watchChats().first;
     final chat = chats
         .where((c) => c.agentId == agent.id)
@@ -243,14 +252,42 @@ class PushNotifier {
               : latest,
         );
     if (chat == null) return null;
-    final messages = await backend.watchMessages(chat.id).first;
+    return (chat, await backend.watchMessages(chat.id).first);
+  }
+
+  String _chatTitle(Agent agent, AgentChat chat) =>
+      chat.isDefault ? agent.name : '${agent.name} · ${chat.displayTitle}';
+
+  /// The last answer in [chat].
+  PushMessage? _replyMessage(
+    Agent agent,
+    AgentChat chat,
+    List<ChatMessage> messages,
+  ) {
     final reply = messages.where((m) => m.role == MessageRole.agent).lastOrNull;
     if (reply == null) return null;
     return PushMessage(
-      title: chat.isDefault
-          ? agent.name
-          : '${agent.name} · ${chat.displayTitle}',
+      title: _chatTitle(agent, chat),
       body: truncate(reply.text, 200),
+      tag: chat.id,
+      data: {'agentId': agent.id, 'chatId': chat.id},
+    );
+  }
+
+  /// E.g. "Claude has a question · Website" with "Which database should I
+  /// use? Options: Postgres or SQLite".
+  PushMessage _questionMessage(
+    Agent agent,
+    AgentChat chat,
+    ChatMessage question,
+  ) {
+    final count = question.questions.length;
+    return PushMessage(
+      title: [
+        '${agent.name} has ${count > 1 ? '$count questions' : 'a question'}',
+        if (!chat.isDefault) chat.displayTitle,
+      ].join(' · '),
+      body: truncate(describeQuestions(question.questions), 200),
       tag: chat.id,
       data: {'agentId': agent.id, 'chatId': chat.id},
     );

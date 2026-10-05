@@ -149,6 +149,73 @@ void main() {
     expect(runner.turns.last.sessionId, 's-1');
   });
 
+  test('steps fold into thinking and questions wait for answers', () async {
+    final backend = create();
+    addTearDown(backend.dispose);
+    const question = AgentQuestion(
+      question: 'Which database?',
+      header: 'Database',
+      options: [QuestionOption('Postgres'), QuestionOption('SQLite')],
+    );
+
+    await backend.sendPrompt('claude', 'Add storage');
+    final turn = runner.turns.single;
+    turn
+      ..emit(const ReplyEvent('Let me look around.'))
+      ..emit(const ThinkingEvent('Reading main.dart'))
+      ..emit(const QuestionEvent('q-1', [question]));
+    await settle();
+
+    var messages = await backend.watchMessages('claude').first;
+    expect(messages.map((m) => m.role), [
+      MessageRole.user,
+      MessageRole.thinking,
+      MessageRole.question,
+    ]);
+    expect(messages[1].steps, ['Let me look around.', 'Reading main.dart']);
+    expect(messages[2].isOpenQuestion, isTrue);
+    expect((await agent(backend)).status, AgentStatus.waiting);
+
+    await backend.answerQuestion('claude', messages[2].id, {
+      'Which database?': 'SQLite',
+    });
+    final answer = turn.changes.single as QuestionAnswer;
+    expect(answer.id, 'q-1');
+    expect(answer.answers, {'Which database?': 'SQLite'});
+    expect((await agent(backend)).status, AgentStatus.running);
+    expect(
+      () => backend.answerQuestion('claude', messages[2].id, const {}),
+      throwsArgumentError,
+    );
+
+    turn.emit(const QuestionEvent('q-2', [question]));
+    await settle();
+    await backend.sendPrompt('claude', 'Whatever is simplest');
+    expect(
+      (turn.changes.last as QuestionAnswer).response,
+      'Whatever is simplest',
+    );
+
+    turn
+      ..emit(const ThinkingEvent('Editing db.dart'))
+      ..emit(const ReplyEvent('Stored in SQLite.'))
+      ..emit(const FinishedEvent(success: true));
+    await settle();
+    messages = await backend.watchMessages('claude').first;
+    expect(messages.map((m) => m.role), [
+      MessageRole.user,
+      MessageRole.thinking,
+      MessageRole.question,
+      MessageRole.question,
+      MessageRole.user,
+      MessageRole.thinking,
+      MessageRole.agent,
+    ]);
+    expect(messages[2].answers, {'Which database?': 'SQLite'});
+    expect(messages[3].answers, isEmpty);
+    expect(messages.last.text, 'Stored in SQLite.');
+  });
+
   test(
     'a queued task starts right away, tracks steps and records tests',
     () async {

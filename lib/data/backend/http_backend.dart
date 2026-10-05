@@ -241,6 +241,17 @@ class HttpAgentBackend implements AgentBackend {
       _request('POST', ApiPaths.prompt(chatId), body: {'text': text});
 
   @override
+  Future<void> answerQuestion(
+    String chatId,
+    String messageId,
+    Map<String, String> answers,
+  ) => _request(
+    'POST',
+    ApiPaths.answer(chatId, messageId),
+    body: {'answers': answers},
+  );
+
+  @override
   Future<AgentChat> createChat(
     String agentId, {
     String? projectId,

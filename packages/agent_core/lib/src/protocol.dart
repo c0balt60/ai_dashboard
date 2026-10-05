@@ -29,6 +29,8 @@ abstract final class ApiPaths {
   static String chat(String chatId) => '/api/chats/$chatId';
   static String prompt(String chatId) => '/api/chats/$chatId/prompt';
   static String clearMessages(String chatId) => '/api/chats/$chatId/messages';
+  static String answer(String chatId, String messageId) =>
+      '/api/chats/$chatId/messages/$messageId/answer';
 
   static const tasks = '/api/tasks';
   static String taskState(String taskId) => '/api/tasks/$taskId/state';

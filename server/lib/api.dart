@@ -152,6 +152,16 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
       (Request r, String id) => action(r, (_) => backend.clearMessages(id)),
     )
     ..post(
+      ApiPaths.answer('<id>', '<messageId>'),
+      (Request r, String id, String messageId) => action(
+        r,
+        (b) => backend.answerQuestion(id, messageId, {
+          for (final e in (b['answers'] as Json).entries)
+            e.key: e.value as String,
+        }),
+      ),
+    )
+    ..post(
       ApiPaths.tasks,
       (Request r) => action(r, (b) async {
         final task = await backend.createTask(

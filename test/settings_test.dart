@@ -31,6 +31,10 @@ void main() {
     expect(settings.authToken, 'secret');
     expect(settings.themeMode, ThemeMode.dark);
     expect(settings.connectionMode, ConnectionMode.server);
-    expect(settings.notifyOn, {PushEvent.failed, PushEvent.waiting});
+    expect(settings.notifyOn, {
+      PushEvent.failed,
+      PushEvent.asked,
+      PushEvent.waiting,
+    });
   });
 }

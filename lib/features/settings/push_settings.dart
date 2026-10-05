@@ -31,6 +31,12 @@ class _PushSettingsState extends ConsumerState<PushSettings> {
       'An agent finishes a task',
     ),
     (
+      PushEvent.asked,
+      Icons.help_outline,
+      'Questions',
+      'An agent asks you something before it carries on',
+    ),
+    (
       PushEvent.replied,
       Icons.chat_bubble_outline,
       'Chat replies',

@@ -19,9 +19,10 @@ import 'agent_runner.dart';
 /// in, which ends the process. Slash commands are sent as prompts; Claude
 /// Code runs the ones that make sense headless.
 ///
-/// Headless Claude Code can only use tools it's allowed to, so give it
-/// permissions through the agent's `extraArgs`, e.g.
-/// `["--permission-mode", "acceptEdits", "--allowedTools", "Bash(git:*)"]`.
+/// With `--permission-prompt-tool stdio` Claude Code asks over stdin before
+/// using a tool its permissions don't already allow: its `AskUserQuestion`
+/// tool becomes a [QuestionEvent] that waits for the owner's answer, and
+/// every other tool is allowed, so permissions are always on.
 class ClaudeCodeRunner extends CliRunner {
   ClaudeCodeRunner(AgentConfig config)
     : super(
@@ -53,6 +54,8 @@ class ClaudeCodeRunner extends CliRunner {
     EffortLevel? effort,
   }) => [
     ..._streamArgs,
+    '--permission-prompt-tool',
+    'stdio',
     if (model != null) ...['--model', model],
     if (effort != null) ...['--effort', effort.name],
     if (sessionId != null) ...['--resume', sessionId],
@@ -89,6 +92,15 @@ class ClaudeCodeRunner extends CliRunner {
     EffortChange(:final effort) => _control('apply_flag_settings', {
       'settings': {'effortLevel': effort?.name},
     }),
+    QuestionAnswer(:final id, :final answers, :final response) =>
+      claudeControlResponse(id, {
+        'behavior': 'allow',
+        'updatedInput': {
+          ...?_parser.questionInputs.remove(id),
+          'answers': answers,
+          'response': ?response,
+        },
+      }),
   });
 
   Json _control(String subtype, Json fields) => {
@@ -96,6 +108,25 @@ class ClaudeCodeRunner extends CliRunner {
     'request_id': 'dashboard-${++_requests}',
     'request': {'subtype': subtype, ...fields},
   };
+
+  /// Allows every tool Claude Code asks about, as the owner wants agents to
+  /// work unattended.
+  @override
+  String? replyTo(String line) {
+    if (!line.contains('"can_use_tool"')) return null;
+    final json = decodeJsonLine(line);
+    final request = json?['request'] as Json? ?? const {};
+    if (request['subtype'] != 'can_use_tool' ||
+        request['tool_name'] == askUserQuestion) {
+      return null;
+    }
+    return jsonEncode(
+      claudeControlResponse(json!['request_id'] as String, {
+        'behavior': 'allow',
+        'updatedInput': request['input'] ?? const <String, Object?>{},
+      }),
+    );
+  }
 
   @override
   Iterable<RunnerEvent> parseLine(String line) => _parser.parse(line);
@@ -137,6 +168,17 @@ class ClaudeCodeRunner extends CliRunner {
     }
   }
 }
+
+const askUserQuestion = 'AskUserQuestion';
+
+Json claudeControlResponse(String requestId, Json response) => {
+  'type': 'control_response',
+  'response': {
+    'subtype': 'success',
+    'request_id': requestId,
+    'response': response,
+  },
+};
 
 Json claudeUserMessage(String prompt) => {
   'type': 'user',
@@ -194,6 +236,10 @@ RunnerOptions parseClaudeOptions(Json response) => (
 class ClaudeStreamParser {
   String? _model;
 
+  /// The input of each open `AskUserQuestion` request, which goes back to
+  /// Claude Code with the answers.
+  final questionInputs = <String, Json>{};
+
   Iterable<RunnerEvent> parse(String line) sync* {
     final json = decodeJsonLine(line);
     if (json == null) return;
@@ -209,6 +255,19 @@ class ClaudeStreamParser {
         }
       case 'assistant':
         yield* _assistant(json);
+      case 'control_request':
+        final request = json['request'] as Json? ?? const {};
+        final id = json['request_id'] as String?;
+        if (request['subtype'] == 'can_use_tool' &&
+            request['tool_name'] == askUserQuestion &&
+            id != null) {
+          final input = request['input'] as Json? ?? const {};
+          questionInputs[id] = input;
+          yield QuestionEvent(id, [
+            for (final q in input['questions'] as List? ?? const [])
+              AgentQuestion.fromJson(q as Json),
+          ]);
+        }
       case 'control_response':
         final response = json['response'] as Json? ?? const {};
         if (response['subtype'] == 'error') {
@@ -281,7 +340,13 @@ class ClaudeStreamParser {
       switch (b['type']) {
         case 'text':
           final text = (b['text'] as String? ?? '').trim();
-          if (text.isNotEmpty) yield ReplyEvent(text);
+          if (text.isEmpty) continue;
+          // A subagent's words are its steps, not the reply.
+          yield mainThread ? ReplyEvent(text) : ThinkingEvent(text);
+        case 'thinking':
+          // Empty unless Claude Code is set to show its thinking.
+          final text = (b['thinking'] as String? ?? '').trim();
+          if (text.isNotEmpty) yield ThinkingEvent(text);
         case 'tool_use':
           final name = b['name'] as String? ?? 'a tool';
           final input = b['input'] as Json? ?? const {};
@@ -305,7 +370,9 @@ class ClaudeStreamParser {
                   'Planning',
             );
           } else {
-            yield ActivityEvent(describeClaudeTool(name, input));
+            final activity = describeClaudeTool(name, input);
+            yield ActivityEvent(activity);
+            if (name != askUserQuestion) yield ThinkingEvent(activity);
           }
       }
     }
@@ -394,6 +461,7 @@ String describeClaudeTool(String name, Json input) {
     'Grep' || 'Glob' => 'Searching the code',
     'WebFetch' || 'WebSearch' => 'Searching the web',
     'Task' || 'Agent' => 'Delegating to a subagent',
+    askUserQuestion => 'Asking you a question',
     _ => 'Using $name',
   };
 }

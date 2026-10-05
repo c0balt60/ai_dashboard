@@ -57,6 +57,10 @@ void main() {
         'Adding a test',
         'Editing parser.dart',
       ]);
+      expect(events.whereType<ThinkingEvent>().map((e) => e.text), [
+        'Running: flutter test',
+        'Editing parser.dart',
+      ]);
       final steps = events.whereType<StepsEvent>().single.steps;
       expect(steps.map((s) => (s.title, s.done)), [
         ('Fix parser', true),
@@ -261,6 +265,8 @@ Future<void> main(List<String> args) async {
         '--output-format',
         'stream-json',
         '--verbose',
+        '--permission-prompt-tool',
+        'stdio',
         '--model',
         'sonnet',
         '--effort',
@@ -283,6 +289,55 @@ Future<void> main(List<String> args) async {
     });
     final prompt = jsonDecode(utf8.decode(runner.encodePrompt('/compact')));
     expect(((prompt as Json)['message'] as Json)['content'], '/compact');
+  });
+
+  test('AskUserQuestion waits for answers and other tools are allowed', () {
+    final runner = ClaudeCodeRunner(
+      const AgentConfig(id: 'c', name: 'Claude', type: AgentType.claudeCode),
+    );
+    // Recorded from Claude Code 2.1.281 with --permission-prompt-tool stdio.
+    const asked =
+        '{"type":"control_request","request_id":"r-1","request":{"subtype":'
+        '"can_use_tool","tool_name":"AskUserQuestion","input":{"questions":'
+        '[{"question":"Which color do you prefer?","header":"Color","options":'
+        '[{"label":"Red","description":"A bold, warm color"},{"label":"Blue",'
+        '"description":"A cool, calming color"}],"multiSelect":false}]},'
+        '"tool_use_id":"t-1","requires_user_interaction":true}}';
+    expect(runner.replyTo(asked), isNull);
+    final question = runner.parseLine(asked).single as QuestionEvent;
+    expect(question.id, 'r-1');
+    expect(question.questions.single.header, 'Color');
+    expect(question.questions.single.options.map((o) => o.label), [
+      'Red',
+      'Blue',
+    ]);
+
+    final answer = jsonDecode(
+      runner.encodeChange(
+        const QuestionAnswer('r-1', answers: {'Which color?': 'Blue'}),
+      )!,
+    ) as Json;
+    final response = answer['response'] as Json;
+    expect(response['request_id'], 'r-1');
+    final allow = response['response'] as Json;
+    expect(allow['behavior'], 'allow');
+    final input = allow['updatedInput'] as Json;
+    expect(input['questions'], hasLength(1));
+    expect(input['answers'], {'Which color?': 'Blue'});
+
+    final allowed = jsonDecode(
+      runner.replyTo(
+        '{"type":"control_request","request_id":"r-2","request":'
+        '{"subtype":"can_use_tool","tool_name":"Bash","input":'
+        '{"command":"rm build"}}}',
+      )!,
+    ) as Json;
+    final reply = allowed['response'] as Json;
+    expect(reply['request_id'], 'r-2');
+    expect(reply['response'], {
+      'behavior': 'allow',
+      'updatedInput': {'command': 'rm build'},
+    });
   });
 
   test('the initialize response lists models and usable commands', () {

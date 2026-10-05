@@ -58,6 +58,8 @@ class CodexRunner extends CliRunner {
             if (text.isNotEmpty) yield ReplyEvent(text);
           case 'reasoning':
             yield const ActivityEvent('Thinking');
+            final text = (item['text'] as String? ?? '').trim();
+            if (done && text.isNotEmpty) yield ThinkingEvent(text);
           case 'command_execution':
             yield ActivityEvent(
               'Running: ${truncate(item['command'] as String? ?? '', 60)}',
