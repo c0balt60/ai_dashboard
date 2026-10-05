@@ -79,6 +79,7 @@ tool/bump_version.dart      bumps pubspec.yaml and lib/app/app_version.dart toge
 
 ### Navigation
 - The five tabs sit in a `StatefulShellRoute.indexedStack`, so each tab keeps its own back stack.
+- System back pops the current tab's stack, then goes to the Dashboard tab (a `PopScope` in `ShellScaffold`); only back on the Dashboard closes the app.
 - Project and agent detail routes are top-level routes on the root navigator, so they cover the nav bar.
 - Use `context.push(AppRoutes.project(id))` or `AppRoutes.agent(id)` for detail screens, and `context.go(AppRoutes.tasks)` etc. to switch tabs.
 
