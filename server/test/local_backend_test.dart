@@ -164,8 +164,6 @@ void main() {
   test('attachments are saved in the project, ignored by git and deleted with '
       'their chat', () async {
     final project = config.projects.single.path;
-    Directory('$project/.git').createSync();
-    File('$project/.gitignore').writeAsStringSync('build/');
     final backend = create();
     addTearDown(backend.dispose);
     final chat = await backend.createChat('claude', projectId: 'app');
@@ -195,16 +193,8 @@ void main() {
     turn.emit(const FinishedEvent(success: true));
     await settle();
 
-    await backend.sendPrompt(
-      chat.id,
-      '',
-      files: [FileUpload('a.txt', Uint8List(1))],
-    );
-    expect(
-      File('$project/.gitignore').readAsStringSync(),
-      'build/\n.attachments/\n',
-      reason: 'the folder is added to .gitignore once',
-    );
+    expect(File('$project/.attachments/.gitignore').readAsStringSync(), '*\n');
+    expect(File('$project/.gitignore').existsSync(), isFalse);
     await expectLater(
       backend.sendPrompt(
         chat.id,

@@ -1392,7 +1392,7 @@ class LocalAgentBackend implements AgentBackend {
   }
 
   /// Saves [files] under [dir]/.attachments/[folder], each under a name not
-  /// taken yet, and keeps the folder out of git when [dir] is in a repo.
+  /// taken yet, and keeps the folder out of git.
   List<Attachment> _save(List<FileUpload> files, String dir, String folder) {
     for (final f in files) {
       if (f.bytes.length > maxAttachmentBytes) {
@@ -1403,7 +1403,7 @@ class LocalAgentBackend implements AgentBackend {
     }
     final target = Directory(p.join(dir, attachmentsFolder, folder))
       ..createSync(recursive: true);
-    if (!p.isWithin(config.dataDir, dir)) ignoreAttachments(dir);
+    ignoreAttachments(dir);
     return [for (final f in files) saveUpload(target.path, f)];
   }
 

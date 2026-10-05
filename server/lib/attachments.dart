@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:agent_core/agent_core.dart';
@@ -34,29 +33,10 @@ String safeFileName(String name) {
   return base.isEmpty || base == '.' || base == '..' ? 'file' : base;
 }
 
-/// Adds the attachments folder to the `.gitignore` of the git repo [dir] is
-/// in, unless it is already there.
+/// Keeps the attachments folder in [dir] out of git with a `.gitignore` of its
+/// own that ignores everything, itself included, so the project's files stay
+/// untouched.
 void ignoreAttachments(String dir) {
-  final root = _gitRoot(dir);
-  if (root == null) return;
-  final file = File(p.join(root, '.gitignore'));
-  final text = file.existsSync() ? file.readAsStringSync() : '';
-  final ignored = LineSplitter.split(text).any(
-    (line) =>
-        RegExp('^/?${RegExp.escape(attachmentsFolder)}/?\$')
-            .hasMatch(line.trim()),
-  );
-  if (ignored) return;
-  final gap = text.isEmpty || text.endsWith('\n') ? '' : '\n';
-  file.writeAsStringSync('$gap$attachmentsFolder/\n', mode: FileMode.append);
-}
-
-String? _gitRoot(String dir) {
-  for (var d = Directory(dir).absolute; ; d = d.parent) {
-    final git = p.join(d.path, '.git');
-    if (FileSystemEntity.typeSync(git) != FileSystemEntityType.notFound) {
-      return d.path;
-    }
-    if (d.parent.path == d.path) return null;
-  }
+  final file = File(p.join(dir, attachmentsFolder, '.gitignore'));
+  if (!file.existsSync()) file.writeAsStringSync('*\n');
 }
