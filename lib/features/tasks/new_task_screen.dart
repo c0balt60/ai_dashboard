@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../data/models/models.dart';
 import '../../providers/backend_providers.dart';
+import '../../widgets/attachments.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/prompt_bar.dart';
@@ -19,7 +20,7 @@ const _maxWidth = 820.0;
 /// Full-screen, assistant-style page for creating a task: describe the work
 /// in the composer, add optional notes, and pick its project and optional
 /// agent from the dropdown buttons inside it. The description becomes the
-/// task's title; the agent gets both. It can be prefilled, e.g. when handing
+/// task's title; the agent gets both, plus any attached files. It can be prefilled, e.g. when handing
 /// off one of the user's to-dos, which then stays linked to the task.
 class NewTaskScreen extends ConsumerStatefulWidget {
   const NewTaskScreen({
@@ -58,6 +59,7 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
   );
   late String? _projectId = widget.projectId;
   late String? _agentId = widget.agentId;
+  final _files = <FileUpload>[];
   bool _submitting = false;
 
   @override
@@ -105,15 +107,20 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
     final agent = _agentId == null ? null : ref.read(agentProvider(_agentId!));
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _submitting = true);
-    await ref
-        .read(backendProvider)
-        .createTask(
-          title,
-          project.id,
-          agentId: agent?.id,
-          description: _notes.text.trim(),
-          todo: widget.todo,
-        );
+    try {
+      await ref
+          .read(backendProvider)
+          .createTask(
+            title,
+            project.id,
+            agentId: agent?.id,
+            description: _notes.text.trim(),
+            todo: widget.todo,
+            files: _files,
+          );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
     if (!mounted) return;
     // Opened from a deep link there is nothing to pop back to.
     context.canPop() ? context.pop() : context.go(AppRoutes.tasks);
@@ -188,6 +195,9 @@ class _NewTaskScreenState extends ConsumerState<NewTaskScreen> {
                 agent: agent,
                 onProject: (id) => setState(() => _projectId = id),
                 onAgent: (id) => setState(() => _agentId = id),
+                files: _files,
+                onAttach: (files) => setState(() => _files.addAll(files)),
+                onRemoveFile: (i) => setState(() => _files.removeAt(i)),
                 templates: _templates,
                 showChips: !keyboardOpen,
                 canCreate: project != null && !_submitting,
@@ -348,6 +358,9 @@ class _Composer extends StatelessWidget {
     required this.agent,
     required this.onProject,
     required this.onAgent,
+    required this.files,
+    required this.onAttach,
+    required this.onRemoveFile,
     required this.templates,
     required this.showChips,
     required this.canCreate,
@@ -366,6 +379,9 @@ class _Composer extends StatelessWidget {
   final Agent? agent;
   final ValueChanged<String> onProject;
   final ValueChanged<String?> onAgent;
+  final List<FileUpload> files;
+  final ValueChanged<List<FileUpload>> onAttach;
+  final ValueChanged<int> onRemoveFile;
   final List<(String, String)> templates;
   final bool showChips;
   final bool canCreate;
@@ -431,138 +447,144 @@ class _Composer extends StatelessWidget {
       ],
     );
 
-    return SafeArea(
-      top: false,
-      child: ContentWidth(
-        maxWidth: _maxWidth,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (showChips) ...[
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+    return FileDropTarget(
+      onFiles: onAttach,
+      child: SafeArea(
+        top: false,
+        child: ContentWidth(
+          maxWidth: _maxWidth,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showChips) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: [
+                        ActionChip(
+                          tooltip: 'Suggest a task',
+                          padding: const EdgeInsets.all(10),
+                          label: Icon(
+                            Icons.auto_awesome_outlined,
+                            size: 20,
+                            color: scheme.onSurface,
+                          ),
+                          onPressed: onSuggest,
+                        ),
+                        for (final (label, starter) in templates)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: ActionChip(
+                              padding: const EdgeInsets.all(10),
+                              label: Text(label, style: chipLabel),
+                              onPressed: () => onTemplate(starter),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      ActionChip(
-                        tooltip: 'Suggest a task',
-                        padding: const EdgeInsets.all(10),
-                        label: Icon(
-                          Icons.auto_awesome_outlined,
-                          size: 20,
-                          color: scheme.onSurface,
-                        ),
-                        onPressed: onSuggest,
-                      ),
-                      for (final (label, starter) in templates)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: ActionChip(
-                            padding: const EdgeInsets.all(10),
-                            label: Text(label, style: chipLabel),
-                            onPressed: () => onTemplate(starter),
+                  child: PromptBarFrame(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (files.isNotEmpty)
+                          PendingAttachments(files, onRemove: onRemoveFile),
+                        TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          minLines: 2,
+                          maxLines: 6,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                          style: theme.textTheme.bodyLarge,
+                          decoration: const InputDecoration(
+                            hintText: 'Describe the task…',
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding: EdgeInsets.fromLTRB(12, 12, 12, 8),
                           ),
                         ),
-                    ],
+                        TextField(
+                          controller: notesController,
+                          minLines: 1,
+                          maxLines: 4,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                          style: theme.textTheme.bodyMedium,
+                          decoration: InputDecoration(
+                            hintText: 'Notes for the agent (optional)',
+                            prefixIcon: Icon(
+                              Icons.notes,
+                              size: 18,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            suffixIcon: AttachButton(onFiles: onAttach),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding: const EdgeInsets.fromLTRB(
+                              0,
+                              8,
+                              12,
+                              8,
+                            ),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Flexible(child: projectPicker),
+                                  const SizedBox(width: 6),
+                                  Flexible(child: agentPicker),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ValueListenableBuilder(
+                              valueListenable: controller,
+                              builder: (context, value, _) => IconButton.filled(
+                                tooltip: enterSubmitsPrompt
+                                    ? 'Create task (Enter)'
+                                    : 'Create task',
+                                onPressed:
+                                    canCreate && value.text.trim().isNotEmpty
+                                    ? onCreate
+                                    : null,
+                                icon: submitting
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.arrow_upward),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 10),
               ],
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: PromptBarFrame(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        minLines: 2,
-                        maxLines: 6,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        style: theme.textTheme.bodyLarge,
-                        decoration: const InputDecoration(
-                          hintText: 'Describe the task…',
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding: EdgeInsets.fromLTRB(12, 12, 12, 8),
-                        ),
-                      ),
-                      TextField(
-                        controller: notesController,
-                        minLines: 1,
-                        maxLines: 4,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        style: theme.textTheme.bodyMedium,
-                        decoration: InputDecoration(
-                          hintText: 'Notes for the agent (optional)',
-                          prefixIcon: Icon(
-                            Icons.notes,
-                            size: 18,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                          prefixIconConstraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
-                          ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding: const EdgeInsets.fromLTRB(
-                            0,
-                            8,
-                            12,
-                            8,
-                          ),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Flexible(child: projectPicker),
-                                const SizedBox(width: 6),
-                                Flexible(child: agentPicker),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ValueListenableBuilder(
-                            valueListenable: controller,
-                            builder: (context, value, _) => IconButton.filled(
-                              tooltip: enterSubmitsPrompt
-                                  ? 'Create task (Enter)'
-                                  : 'Create task',
-                              onPressed:
-                                  canCreate && value.text.trim().isNotEmpty
-                                  ? onCreate
-                                  : null,
-                              icon: submitting
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.arrow_upward),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

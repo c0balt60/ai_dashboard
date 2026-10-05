@@ -187,6 +187,23 @@ void main() {
     expect(find.textContaining('re-sends all'), findsOneWidget);
   });
 
+  testWidgets('attached files show on the prompt and in the composer', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .push(AppRoutes.agent('a2', chatId: 'c2'));
+    await _pumpChat(tester);
+
+    expect(find.text('chat-mockup.png'), findsOneWidget);
+    await tester.tap(find.byTooltip('Attach or assign'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Attach files'), findsOneWidget);
+    expect(find.text('Take a photo'), findsOneWidget);
+    expect(find.text('Assign to folder / task'), findsOneWidget);
+  });
+
   testWidgets('an agent question is answered by picking an option', (
     tester,
   ) async {
