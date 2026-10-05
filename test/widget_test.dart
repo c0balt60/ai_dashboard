@@ -224,6 +224,22 @@ void main() {
     expect(find.text('stripe-event.json'), findsNothing);
   });
 
+  testWidgets('back on another tab goes to the dashboard before exiting', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    final router = ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider);
+    router.go(AppRoutes.projects);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(router.state.uri.path, AppRoutes.dashboard);
+
+    expect(await tester.binding.handlePopRoute(), isFalse);
+  });
+
   testWidgets('an agent question is answered by picking an option', (
     tester,
   ) async {
