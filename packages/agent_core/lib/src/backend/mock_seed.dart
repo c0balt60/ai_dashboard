@@ -298,6 +298,7 @@ class MockSeed {
     String? agentId,
     double progress = 0,
     List<String> steps = const [],
+    List<Attachment> attachments = const [],
     required DateTime created,
     DateTime? completed,
   }) {
@@ -308,6 +309,7 @@ class MockSeed {
       description: description,
       projectId: projectId,
       agentId: agentId,
+      attachments: attachments,
       state: state,
       progress: progress,
       steps: [
@@ -338,6 +340,13 @@ class MockSeed {
         'Handle checkout.session.completed events',
         'Write integration tests',
         'Update API docs',
+      ],
+      attachments: const [
+        Attachment(
+          name: 'stripe-event.json',
+          size: 3412,
+          path: r'C:\dev\shop-api\.attachments\tasks\t1\stripe-event.json',
+        ),
       ],
       created: _ago(hours: 2),
     ),

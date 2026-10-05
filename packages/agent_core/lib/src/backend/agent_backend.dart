@@ -103,6 +103,10 @@ abstract interface class AgentBackend {
 
   Future<void> updateTaskState(String taskId, TaskState state);
 
+  /// Removes the attachment [name] from the task and deletes its file on the
+  /// PC.
+  Future<void> deleteTaskAttachment(String taskId, String name);
+
   /// The user's own to-do lists. Agents never act on these directly.
   Stream<List<TodoList>> watchTodoLists();
 

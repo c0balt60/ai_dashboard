@@ -116,6 +116,7 @@ class AgentTask {
     List<TaskStep>? steps,
     DateTime? updatedAt,
     DateTime? Function()? completedAt,
+    List<Attachment>? attachments,
   }) {
     return AgentTask(
       id: id,
@@ -123,7 +124,7 @@ class AgentTask {
       description: description,
       projectId: projectId,
       todo: todo,
-      attachments: attachments,
+      attachments: attachments ?? this.attachments,
       createdAt: createdAt,
       state: state ?? this.state,
       agentId: agentId != null ? agentId() : this.agentId,

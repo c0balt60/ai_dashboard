@@ -484,6 +484,21 @@ class MockAgentBackend implements AgentBackend {
   }
 
   @override
+  Future<void> deleteTaskAttachment(String taskId, String name) async {
+    final task = _tasks[taskId];
+    if (task == null) return;
+    _putTask(
+      task.copyWith(
+        attachments: [
+          for (final a in task.attachments)
+            if (a.name != name) a,
+        ],
+      ),
+    );
+    _notify();
+  }
+
+  @override
   Future<void> updateTaskState(String taskId, TaskState state) async {
     final task = _tasks[taskId];
     if (task == null) return;
