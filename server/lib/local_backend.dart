@@ -856,6 +856,33 @@ class LocalAgentBackend implements AgentBackend {
   }
 
   @override
+  Future<void> deleteTaskAttachment(String taskId, String name) async {
+    final task = _tasks[taskId];
+    if (task == null) throw ArgumentError('Unknown task $taskId');
+    final attachment = task.attachments
+        .where((a) => a.name == name)
+        .firstOrNull;
+    if (attachment == null) throw ArgumentError('$name is not attached');
+    final file = File(attachment.path);
+    try {
+      if (file.existsSync()) file.deleteSync();
+      // Only goes when empty, so after the task's last file.
+      if (file.parent.listSync().isEmpty) file.parent.deleteSync();
+    } on FileSystemException catch (e) {
+      stderr.writeln('Could not delete ${file.path}: ${e.message}');
+    }
+    _putTask(
+      task.copyWith(
+        attachments: [
+          for (final a in task.attachments)
+            if (a != attachment) a,
+        ],
+      ),
+    );
+    _notify();
+  }
+
+  @override
   Future<void> updateTaskState(String taskId, TaskState state) async {
     final task = _tasks[taskId];
     if (task == null) return;

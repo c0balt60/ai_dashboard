@@ -194,6 +194,13 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
         ),
       ),
     )
+    ..delete(
+      ApiPaths.taskAttachments('<id>'),
+      (Request r, String id) => action(
+        r,
+        (b) => backend.deleteTaskAttachment(id, b['name'] as String),
+      ),
+    )
     ..post(
       ApiPaths.todoLists,
       (Request r) => action(r, (b) async {

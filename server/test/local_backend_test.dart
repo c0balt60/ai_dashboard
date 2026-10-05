@@ -208,6 +208,39 @@ void main() {
     expect(Directory('$project/.attachments/${chat.id}').existsSync(), isFalse);
   });
 
+  test('a task attachment can be deleted', () async {
+    final project = config.projects.single.path;
+    final backend = create();
+    addTearDown(backend.dispose);
+    final task = await backend.createTask(
+      'Fix the crash',
+      'app',
+      files: [
+        FileUpload('crash.log', Uint8List(1)),
+        FileUpload('shot.png', Uint8List(1)),
+      ],
+    );
+    final [log, shot] = task.attachments;
+
+    await backend.deleteTaskAttachment(task.id, 'crash.log');
+    expect(File(log.path).existsSync(), isFalse);
+    var tasks = await backend.watchTasks().first;
+    expect(tasks.single.attachments.single.name, 'shot.png');
+
+    await backend.deleteTaskAttachment(task.id, 'shot.png');
+    expect(File(shot.path).existsSync(), isFalse);
+    expect(
+      Directory('$project/.attachments/tasks/${task.id}').existsSync(),
+      isFalse,
+    );
+    tasks = await backend.watchTasks().first;
+    expect(tasks.single.attachments, isEmpty);
+    await expectLater(
+      backend.deleteTaskAttachment(task.id, 'shot.png'),
+      throwsArgumentError,
+    );
+  });
+
   test('steps fold into thinking and questions wait for answers', () async {
     final backend = create();
     addTearDown(backend.dispose);
