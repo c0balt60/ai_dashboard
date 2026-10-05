@@ -19,7 +19,11 @@ class AppSettings {
     this.serverUrl = '',
     this.authToken = '',
     this.simulate = true,
-    this.notifyOn = const {PushEvent.failed, PushEvent.replied},
+    this.notifyOn = const {
+      PushEvent.failed,
+      PushEvent.asked,
+      PushEvent.replied,
+    },
   });
 
   /// The defaults for a fresh install. A release web build is normally served
@@ -78,6 +82,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _notifyKeys = {
     PushEvent.failed: 'notifyOnFailure',
     PushEvent.completed: 'notifyOnComplete',
+    PushEvent.asked: 'notifyOnQuestion',
     PushEvent.replied: 'notifyOnReply',
     PushEvent.waiting: 'notifyOnWaiting',
   };

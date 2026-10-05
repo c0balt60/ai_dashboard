@@ -79,11 +79,13 @@ void main() {
     expect(notifier.devices.single.token, 'fcm-token');
     expect(notifier.devices.single.events, {
       PushEvent.failed,
+      PushEvent.asked,
       PushEvent.replied,
     });
 
     container.read(settingsProvider.notifier)
       ..setNotify(PushEvent.failed, false)
+      ..setNotify(PushEvent.asked, false)
       ..setNotify(PushEvent.replied, false);
     await until(() => notifier.devices.isEmpty);
     expect(container.read(pushProvider).status, PushStatus.off);

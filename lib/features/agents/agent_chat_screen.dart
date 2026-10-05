@@ -21,6 +21,7 @@ import '../../widgets/sheets/usage_sheet.dart';
 import '../../widgets/status/agent_avatar.dart';
 import '../../widgets/status/status_badge.dart';
 import '../../widgets/status/status_visuals.dart';
+import 'agent_turn_widgets.dart';
 import 'chat_markdown.dart';
 
 const _chatMaxWidth = 820.0;
@@ -391,6 +392,7 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                       ? _Greeting(agent: agent, project: project, onSend: _send)
                       : _MessageList(
                           agent: agent,
+                          chatId: chatId!,
                           messages: messages,
                           controller: _scroll,
                         ),
@@ -415,7 +417,9 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                   ),
                 ),
               _Composer(
-                hint: project == null
+                hint: messagesAsync.value?.lastOrNull?.isOpenQuestion ?? false
+                    ? 'Or answer in your own words…'
+                    : project == null
                     ? 'Ask ${agent.name} anything…'
                     : 'Ask ${agent.name} about ${project.name}…',
                 modelLabel: describeModel(agent, options),
@@ -1024,14 +1028,26 @@ class _Greeting extends ConsumerWidget {
   }
 }
 
+/// Which side of the chat a message sits on, so an agent's thinking,
+/// questions and replies group together.
+enum _Side { user, system, agent }
+
+_Side _sideOf(MessageRole role) => switch (role) {
+  MessageRole.user => _Side.user,
+  MessageRole.system => _Side.system,
+  _ => _Side.agent,
+};
+
 class _MessageList extends StatelessWidget {
   const _MessageList({
     required this.agent,
+    required this.chatId,
     required this.messages,
     required this.controller,
   });
 
   final Agent agent;
+  final String chatId;
   final List<ChatMessage> messages;
   final ScrollController controller;
 
@@ -1065,16 +1081,46 @@ class _MessageList extends StatelessWidget {
                 ? messages[index + 1]
                 : null;
             final older = index > 0 ? messages[index - 1] : null;
-            return Padding(
-              padding: EdgeInsets.only(
-                top: older?.role == message.role ? 2 : 10,
+            final side = _sideOf(message.role);
+            final showAvatar = newer == null || _sideOf(newer.role) != side;
+            final Widget child = switch (message.role) {
+              MessageRole.thinking => _AgentRow(
+                agent.type,
+                showAvatar: showAvatar,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: bubbleWidth),
+                  child: ThinkingBubble(
+                    steps: message.steps,
+                    live: newer == null && agent.status == AgentStatus.running,
+                  ),
+                ),
               ),
-              child: _MessageBubble(
+              MessageRole.question => _AgentRow(
+                agent.type,
+                showAvatar: showAvatar,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.min(column - 40, 620),
+                  ),
+                  child: QuestionCard(
+                    key: ValueKey(message.id),
+                    chatId: chatId,
+                    message: message,
+                  ),
+                ),
+              ),
+              _ => _MessageBubble(
                 message: message,
                 agentType: agent.type,
-                showAvatar: newer?.role != message.role,
+                showAvatar: showAvatar,
                 maxWidth: bubbleWidth,
               ),
+            };
+            return Padding(
+              padding: EdgeInsets.only(
+                top: older != null && _sideOf(older.role) == side ? 4 : 10,
+              ),
+              child: child,
             );
           },
         );
@@ -1186,12 +1232,27 @@ class _MessageBubble extends StatelessWidget {
     if (isUser) {
       return Align(alignment: AlignmentDirectional.centerEnd, child: bubble);
     }
+    return _AgentRow(agentType, showAvatar: showAvatar, child: bubble);
+  }
+}
+
+/// Lines [child] up on the agent's side, next to its icon on the last entry
+/// of a group.
+class _AgentRow extends StatelessWidget {
+  const _AgentRow(this.type, {required this.showAvatar, required this.child});
+
+  final AgentType type;
+  final bool showAvatar;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        _AgentIcon(agentType, visible: showAvatar),
+        _AgentIcon(type, visible: showAvatar),
         const SizedBox(width: 8),
-        Flexible(child: bubble),
+        Flexible(child: child),
       ],
     );
   }

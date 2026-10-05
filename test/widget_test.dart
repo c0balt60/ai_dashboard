@@ -187,6 +187,25 @@ void main() {
     expect(find.textContaining('re-sends all'), findsOneWidget);
   });
 
+  testWidgets('an agent question is answered by picking an option', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .push(AppRoutes.agent('a3'));
+    await _pumpChat(tester);
+
+    expect(find.text('Or answer in your own words…'), findsOneWidget);
+    await tester.tap(find.text('Add edge cases'));
+    await tester.pump();
+    await tester.tap(find.text('Submit'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Answered'), findsOneWidget);
+    expect(find.text('→ Add edge cases'), findsOneWidget);
+  });
+
   testWidgets('new task page creates a queued task for the chosen agent', (
     tester,
   ) async {
