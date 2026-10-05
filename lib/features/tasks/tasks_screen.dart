@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../data/models/models.dart';
 import '../../providers/backend_providers.dart';
 import '../../utils/time_format.dart';
+import '../../widgets/attachments.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/page.dart';
@@ -488,6 +489,23 @@ class _TaskDetailsSheet extends ConsumerWidget {
             if (task.description.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(task.description, style: muted),
+            ],
+            if (task.attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final a in task.attachments)
+                    AttachmentChip(
+                      name: a.name,
+                      size: a.size,
+                      onDeleted: () => ref
+                          .read(backendProvider)
+                          .deleteTaskAttachment(task.id, a.name),
+                    ),
+                ],
+              ),
             ],
             const SizedBox(height: 12),
             _DetailRow(

@@ -107,8 +107,14 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
     )
     ..post(
       ApiPaths.prompt('<id>'),
-      (Request r, String id) =>
-          action(r, (b) => backend.sendPrompt(id, b['text'] as String)),
+      (Request r, String id) => action(
+        r,
+        (b) => backend.sendPrompt(
+          id,
+          b['text'] as String? ?? '',
+          files: _files(b),
+        ),
+      ),
     )
     ..put(
       ApiPaths.agentProjects('<id>'),
@@ -173,6 +179,7 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
             final Json link => TodoLink.fromJson(link),
             _ => null,
           },
+          files: _files(b),
         );
         return task.toJson();
       }),
@@ -185,6 +192,13 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
           id,
           TaskState.values.byName(b['state'] as String),
         ),
+      ),
+    )
+    ..delete(
+      ApiPaths.taskAttachments('<id>'),
+      (Request r, String id) => action(
+        r,
+        (b) => backend.deleteTaskAttachment(id, b['name'] as String),
       ),
     )
     ..post(
@@ -251,6 +265,11 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
       return action(r, (b) => push.sendTest(b['token'] as String));
     });
 }
+
+List<FileUpload> _files(Json body) => [
+  for (final f in body['files'] as List? ?? const [])
+    FileUpload.fromJson(f as Json),
+];
 
 /// Serves one WebSocket client: each subscribed topic streams snapshots until
 /// the client unsubscribes or disconnects.

@@ -165,12 +165,15 @@ abstract interface class AgentRunner {
     AgentType.aider => TextRunner.aider(config),
   };
 
+  /// The [prompt] already tells the agent where its [attachments] are; a CLI
+  /// that can take images directly also gets those.
   AgentTurn start({
     required String prompt,
     required String workingDir,
     String? sessionId,
     String? model,
     EffortLevel? effort,
+    List<Attachment> attachments = const [],
   });
 
   /// Asks the CLI which models and commands it offers in [workingDir].
@@ -210,7 +213,10 @@ abstract class CliRunner implements AgentRunner {
   });
 
   /// What goes on stdin to start the turn.
-  List<int> encodePrompt(String prompt) => utf8.encode(prompt);
+  List<int> encodePrompt(
+    String prompt, {
+    List<Attachment> attachments = const [],
+  }) => utf8.encode(prompt);
 
   /// The stdin line that applies [change] mid-turn, or null when the CLI
   /// can't.
@@ -254,6 +260,7 @@ abstract class CliRunner implements AgentRunner {
     String? sessionId,
     String? model,
     EffortLevel? effort,
+    List<Attachment> attachments = const [],
   }) {
     final controller = StreamController<RunnerEvent>();
     Process? process;
@@ -314,7 +321,9 @@ abstract class CliRunner implements AgentRunner {
         // Writing to a CLI that already exited must not crash the server.
         started.stdin.done.ignore();
         if (cancelled) await killTree(started);
-        if (!promptViaFile) started.stdin.add(encodePrompt(prompt));
+        if (!promptViaFile) {
+          started.stdin.add(encodePrompt(prompt, attachments: attachments));
+        }
         if (keepsInputOpen) {
           inputOpen = true;
         } else {

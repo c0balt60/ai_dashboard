@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard/data/backend/http_backend.dart';
@@ -50,19 +51,31 @@ void main() {
     final mockAgents = await mock.watchAgents().first;
     expect(agents.map((a) => a.id), mockAgents.map((a) => a.id));
 
-    final task = await backend.createTask('Ship it', 'p1', agentId: 'a1');
+    final task = await backend.createTask(
+      'Ship it',
+      'p1',
+      agentId: 'a1',
+      files: [FileUpload('spec.pdf', Uint8List(4))],
+    );
     expect(task.state, TaskState.waiting);
+    expect(task.attachments.single.size, 4);
     await backend
         .watchTasks()
         .firstWhere((tasks) => tasks.any((t) => t.id == task.id))
         .timeout(const Duration(seconds: 5));
 
     final chat = await backend.createChat('a5', projectId: 'p1');
-    await backend.sendPrompt(chat.id, 'Hello');
+    await backend.sendPrompt(
+      chat.id,
+      'Hello',
+      files: [FileUpload('shot.png', Uint8List(3))],
+    );
     await backend
         .watchChats()
         .firstWhere((chats) => chats.any((c) => c.title == 'Hello'))
         .timeout(const Duration(seconds: 5));
+    final sent = (await mock.watchMessages(chat.id).first).first;
+    expect(sent.attachments.single.name, 'shot.png');
     await backend.setAgentProjects('a5', ['p1', 'p2']);
     final aider = (await mock.watchAgents().first).firstWhere(
       (a) => a.id == 'a5',

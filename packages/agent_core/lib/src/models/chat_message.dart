@@ -1,10 +1,12 @@
+import 'attachment.dart';
 import 'enums.dart';
 import 'json.dart';
 
 /// One chat entry. Besides plain text, a [MessageRole.thinking] message
 /// gathers the [steps] an agent worked through on its way to a reply, and a
 /// [MessageRole.question] message holds the [questions] it asked, with the
-/// owner's [answers] once given.
+/// owner's [answers] once given. A prompt carries the files the owner
+/// attached to it.
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -15,6 +17,7 @@ class ChatMessage {
     this.steps = const [],
     this.questions = const [],
     this.answers,
+    this.attachments = const [],
   });
 
   factory ChatMessage.fromJson(Json json) => ChatMessage(
@@ -31,6 +34,7 @@ class ChatMessage {
       },
       _ => null,
     },
+    attachments: decodeList(json['attachments'], Attachment.fromJson),
   );
 
   final String id;
@@ -45,6 +49,7 @@ class ChatMessage {
   /// Null while the agent waits for them; empty when the turn ended without
   /// them, or when the owner replied in their own words instead.
   final Map<String, String>? answers;
+  final List<Attachment> attachments;
 
   bool get isOpenQuestion => role == MessageRole.question && answers == null;
 
@@ -60,6 +65,7 @@ class ChatMessage {
     steps: steps ?? this.steps,
     questions: questions,
     answers: answers == null ? this.answers : answers(),
+    attachments: attachments,
   );
 
   Json toJson() => {
@@ -72,6 +78,8 @@ class ChatMessage {
     if (questions.isNotEmpty)
       'questions': [for (final q in questions) q.toJson()],
     'answers': ?answers,
+    if (attachments.isNotEmpty)
+      'attachments': [for (final a in attachments) a.toJson()],
   };
 }
 

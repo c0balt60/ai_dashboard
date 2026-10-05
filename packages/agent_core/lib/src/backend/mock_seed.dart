@@ -298,6 +298,7 @@ class MockSeed {
     String? agentId,
     double progress = 0,
     List<String> steps = const [],
+    List<Attachment> attachments = const [],
     required DateTime created,
     DateTime? completed,
   }) {
@@ -308,6 +309,7 @@ class MockSeed {
       description: description,
       projectId: projectId,
       agentId: agentId,
+      attachments: attachments,
       state: state,
       progress: progress,
       steps: [
@@ -338,6 +340,13 @@ class MockSeed {
         'Handle checkout.session.completed events',
         'Write integration tests',
         'Update API docs',
+      ],
+      attachments: const [
+        Attachment(
+          name: 'stripe-event.json',
+          size: 3412,
+          path: r'C:\dev\shop-api\.attachments\tasks\t1\stripe-event.json',
+        ),
       ],
       created: _ago(hours: 2),
     ),
@@ -751,12 +760,19 @@ class MockSeed {
         r'Assigned to C:\dev\ai_dashboard\lib\features',
         _ago(hours: 1, minutes: 30),
       ),
-      _msg(
-        'm6',
-        'a2',
-        MessageRole.user,
-        'Build the agent chat screen with bubbles and a composer.',
-        _ago(hours: 1, minutes: 30),
+      ChatMessage(
+        id: 'm6',
+        agentId: 'a2',
+        role: MessageRole.user,
+        text: 'Build the agent chat screen with bubbles and a composer.',
+        at: _ago(hours: 1, minutes: 30),
+        attachments: const [
+          Attachment(
+            name: 'chat-mockup.png',
+            size: 284133,
+            path: r'C:\dev\ai_dashboard\.attachments\c2\chat-mockup.png',
+          ),
+        ],
       ),
       _msg(
         'm7',

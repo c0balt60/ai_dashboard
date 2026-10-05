@@ -11,6 +11,7 @@ import '../../app/theme.dart';
 import '../../data/models/models.dart';
 import '../../providers/backend_providers.dart';
 import '../../utils/time_format.dart';
+import '../../widgets/attachments.dart';
 import '../../widgets/common.dart';
 import '../../widgets/layout.dart';
 import '../../widgets/prompt_bar.dart';
@@ -111,9 +112,9 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
     _draft = true;
   });
 
-  Future<void> _send(String text) async {
+  Future<void> _send(String text, {List<FileUpload> files = const []}) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty && files.isEmpty) return;
     final backend = ref.read(backendProvider);
     var chatId = _chatIdOf(_resolveChat(listen: false));
     if (chatId == null) {
@@ -125,7 +126,7 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
       _openChat(chat.id);
       chatId = chat.id;
     }
-    backend.sendPrompt(chatId, trimmed);
+    final sending = backend.sendPrompt(chatId, trimmed, files: files);
     if (_scroll.hasClients) {
       _scroll.animateTo(
         0,
@@ -133,6 +134,9 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
         curve: Curves.easeOut,
       );
     }
+    // The composer waits for uploads so it can give the files back if they
+    // fail.
+    if (files.isNotEmpty) await sending;
   }
 
   Future<void> _onAction(
@@ -432,7 +436,7 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                   chatId: chatId,
                   onSend: _send,
                 ),
-                onSend: _send,
+                onSend: (text, files) => _send(text, files: files),
                 onSwitchAgent: () =>
                     _showAgentSwitcher(context, agent.id, projectId: projectId),
                 onAssign: () => showAssignAgentSheet(
@@ -1196,31 +1200,49 @@ class _MessageBubble extends StatelessWidget {
           onLongPress: () => _copy(context),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-            // The time sits beside short texts and wraps to its own
-            // right-aligned line under longer ones.
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.end,
-              spacing: 8,
-              runSpacing: 2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (isUser)
-                  Text(
-                    message.text,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: foreground,
-                    ),
-                  )
-                else
-                  ChatMarkdown(message.text, color: foreground),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    clockTime(message.at),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: foreground.withValues(alpha: 0.65),
+                if (message.attachments.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final a in message.attachments)
+                          AttachmentChip(name: a.name, size: a.size),
+                      ],
                     ),
                   ),
+                // The time sits beside short texts and wraps to its own
+                // right-aligned line under longer ones.
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.end,
+                  spacing: 8,
+                  runSpacing: 2,
+                  children: [
+                    if (isUser && message.text.isNotEmpty)
+                      Text(
+                        message.text,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: foreground,
+                        ),
+                      )
+                    else if (!isUser)
+                      ChatMarkdown(message.text, color: foreground),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        clockTime(message.at),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: foreground.withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1364,11 +1386,13 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   }
 }
 
-/// Quick-prompt chips above a large rounded composer card: the message field
-/// on top, then round assign and slash-command buttons, the model and effort
-/// picker, the context meter and the send button. Typing `/` lists the
-/// agent's slash commands above the card. On desktop and web, Enter sends and
-/// Shift+Enter inserts a newline; on phones Enter always inserts a newline.
+/// Quick-prompt chips above a large rounded composer card: attached files and
+/// the message field on top, then a round "+" (attach files, take a photo or
+/// assign) and slash-command buttons, the model and effort picker, the context meter and the send
+/// button. Typing `/` lists the agent's slash commands above the card. On
+/// desktop and web, Enter sends and Shift+Enter inserts a newline; on phones
+/// Enter always inserts a newline. Files pasted or dropped on the page are
+/// attached too.
 class _Composer extends StatefulWidget {
   const _Composer({
     required this.hint,
@@ -1389,7 +1413,7 @@ class _Composer extends StatefulWidget {
   final List<SlashCommand> commands;
   final VoidCallback onModel;
   final VoidCallback onUsage;
-  final ValueChanged<String> onSend;
+  final Future<void> Function(String text, List<FileUpload> files) onSend;
   final VoidCallback onSwitchAgent;
   final VoidCallback onAssign;
   final bool showQuickPrompts;
@@ -1410,6 +1434,8 @@ class _ComposerState extends State<_Composer> {
   late final _focus = FocusNode(
     onKeyEvent: submitOnEnter(_controller, _submit),
   );
+  final _files = <FileUpload>[];
+  bool _uploading = false;
 
   /// The matching commands float above the card in an overlay, so they never
   /// push the chat past the space left by the keyboard.
@@ -1443,10 +1469,34 @@ class _ComposerState extends State<_Composer> {
 
   void _submit() {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    widget.onSend(text);
+    if (_uploading || text.isEmpty && _files.isEmpty) return;
     _controller.clear();
+    _send(text);
   }
+
+  /// Sends [text] with the attached files. A failed upload puts the text and
+  /// files back, then rethrows so the error shows.
+  Future<void> _send(String text) async {
+    if (_uploading) return;
+    final files = [..._files];
+    setState(() {
+      _files.clear();
+      _uploading = files.isNotEmpty;
+    });
+    try {
+      await widget.onSend(text, files);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _files.insertAll(0, files));
+        if (_controller.text.isEmpty) _controller.text = text;
+      }
+      rethrow;
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  void _attach(List<FileUpload> files) => setState(() => _files.addAll(files));
 
   /// Types a `/` where the cursor is, which opens the command list.
   void _startCommand() {
@@ -1494,155 +1544,182 @@ class _ComposerState extends State<_Composer> {
       side: BorderSide(color: scheme.outlineVariant),
     );
 
-    return SafeArea(
-      top: false,
-      child: ContentWidth(
-        maxWidth: _chatMaxWidth,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ValueListenableBuilder(
-                valueListenable: _controller,
-                builder: (context, value, _) {
-                  if (!widget.showQuickPrompts ||
-                      _matches(value.text).isNotEmpty) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          ActionChip(
-                            tooltip: 'Switch agent',
-                            padding: const EdgeInsets.all(10),
-                            label: Icon(
-                              Icons.auto_awesome_outlined,
-                              size: 20,
-                              color: scheme.onSurface,
+    return FileDropTarget(
+      onFiles: _attach,
+      child: SafeArea(
+        top: false,
+        child: ContentWidth(
+          maxWidth: _chatMaxWidth,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder(
+                  valueListenable: _controller,
+                  builder: (context, value, _) {
+                    if (!widget.showQuickPrompts ||
+                        _matches(value.text).isNotEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            ActionChip(
+                              tooltip: 'Switch agent',
+                              padding: const EdgeInsets.all(10),
+                              label: Icon(
+                                Icons.auto_awesome_outlined,
+                                size: 20,
+                                color: scheme.onSurface,
+                              ),
+                              onPressed: widget.onSwitchAgent,
                             ),
-                            onPressed: widget.onSwitchAgent,
-                          ),
-                          for (final label in _quickPrompts)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: ActionChip(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 10,
+                            for (final label in _quickPrompts)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: ActionChip(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 10,
+                                  ),
+                                  label: Text(label, style: chipLabel),
+                                  onPressed: () => _send(label),
                                 ),
-                                label: Text(label, style: chipLabel),
-                                onPressed: () => widget.onSend(label),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: CompositedTransformTarget(
-                  link: _cardLink,
-                  child: OverlayPortal(
-                    controller: _commandList,
-                    overlayChildBuilder: _buildCommandList,
-                    child: PromptBarFrame(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _controller,
-                            focusNode: _focus,
-                            minLines: 1,
-                            maxLines: 5,
-                            keyboardType: TextInputType.multiline,
-                            textCapitalization: TextCapitalization.sentences,
-                            style: theme.textTheme.bodyLarge,
-                            decoration: InputDecoration(
-                              hintText: widget.hint,
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              filled: false,
-                              contentPadding: const EdgeInsets.fromLTRB(
-                                12,
-                                12,
-                                12,
-                                8,
+                    );
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: CompositedTransformTarget(
+                    link: _cardLink,
+                    child: OverlayPortal(
+                      controller: _commandList,
+                      overlayChildBuilder: _buildCommandList,
+                      child: PromptBarFrame(
+                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (_files.isNotEmpty)
+                              PendingAttachments(
+                                _files,
+                                onRemove: (i) =>
+                                    setState(() => _files.removeAt(i)),
+                              ),
+                            if (_uploading)
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
+                                child: LinearProgressIndicator(),
+                              ),
+                            TextField(
+                              controller: _controller,
+                              focusNode: _focus,
+                              minLines: 1,
+                              maxLines: 5,
+                              keyboardType: TextInputType.multiline,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: theme.textTheme.bodyLarge,
+                              decoration: InputDecoration(
+                                hintText: widget.hint,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: false,
+                                contentPadding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  12,
+                                  12,
+                                  8,
+                                ),
                               ),
                             ),
-                          ),
-                          Row(
-                            children: [
-                              IconButton.outlined(
-                                style: outlined,
-                                tooltip: 'Assign to folder / task',
-                                onPressed: widget.onAssign,
-                                icon: const Icon(Icons.add),
-                              ),
-                              if (widget.commands.isNotEmpty)
-                                IconButton.outlined(
+                            Row(
+                              children: [
+                                AttachButton(
                                   style: outlined,
-                                  tooltip: 'Slash commands',
-                                  onPressed: _startCommand,
-                                  icon: const Text(
-                                    '/',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w600,
+                                  icon: Icons.add,
+                                  tooltip: 'Attach or assign',
+                                  onFiles: _attach,
+                                  extraItems: [
+                                    MenuItemButton(
+                                      leadingIcon: const Icon(
+                                        Icons.drive_file_move,
+                                      ),
+                                      onPressed: widget.onAssign,
+                                      child: const Text(
+                                        'Assign to folder / task',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (widget.commands.isNotEmpty)
+                                  IconButton.outlined(
+                                    style: outlined,
+                                    tooltip: 'Slash commands',
+                                    onPressed: _startCommand,
+                                    icon: const Text(
+                                      '/',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: _ModelButton(
+                                      label: widget.modelLabel,
+                                      onPressed: widget.onModel,
                                     ),
                                   ),
                                 ),
-                              Expanded(
-                                child: Align(
-                                  alignment: AlignmentDirectional.centerStart,
-                                  child: _ModelButton(
-                                    label: widget.modelLabel,
-                                    onPressed: widget.onModel,
-                                  ),
+                                _ContextButton(
+                                  widget.context,
+                                  onPressed: widget.onUsage,
                                 ),
-                              ),
-                              _ContextButton(
-                                widget.context,
-                                onPressed: widget.onUsage,
-                              ),
-                              ValueListenableBuilder(
-                                valueListenable: _controller,
-                                builder: (context, value, _) {
-                                  final tooltip = enterSubmitsPrompt
-                                      ? 'Send (Enter)'
-                                      : 'Send';
-                                  const icon = Icon(Icons.arrow_upward);
-                                  return value.text.trim().isEmpty
-                                      ? IconButton.outlined(
-                                          style: outlined,
-                                          tooltip: tooltip,
-                                          onPressed: null,
-                                          icon: icon,
-                                        )
-                                      : IconButton.filled(
-                                          tooltip: tooltip,
-                                          onPressed: _submit,
-                                          icon: icon,
-                                        );
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
+                                ValueListenableBuilder(
+                                  valueListenable: _controller,
+                                  builder: (context, value, _) {
+                                    final tooltip = enterSubmitsPrompt
+                                        ? 'Send (Enter)'
+                                        : 'Send';
+                                    const icon = Icon(Icons.arrow_upward);
+                                    return _uploading ||
+                                            value.text.trim().isEmpty &&
+                                                _files.isEmpty
+                                        ? IconButton.outlined(
+                                            style: outlined,
+                                            tooltip: tooltip,
+                                            onPressed: null,
+                                            icon: icon,
+                                          )
+                                        : IconButton.filled(
+                                            tooltip: tooltip,
+                                            onPressed: _submit,
+                                            icon: icon,
+                                          );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

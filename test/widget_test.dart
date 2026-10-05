@@ -187,6 +187,43 @@ void main() {
     expect(find.textContaining('re-sends all'), findsOneWidget);
   });
 
+  testWidgets('attached files show on the prompt and in the composer', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .push(AppRoutes.agent('a2', chatId: 'c2'));
+    await _pumpChat(tester);
+
+    expect(find.text('chat-mockup.png'), findsOneWidget);
+    await tester.tap(find.byTooltip('Attach or assign'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Attach files'), findsOneWidget);
+    expect(find.text('Take a photo'), findsOneWidget);
+    expect(find.text('Assign to folder / task'), findsOneWidget);
+  });
+
+  testWidgets('a task attachment is deleted from the task details', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .go(AppRoutes.tasks);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(
+      find.textContaining('Implement Stripe webhook handler').first,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('stripe-event.json'), findsOneWidget);
+    await tester.tap(find.byTooltip('Remove stripe-event.json'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('stripe-event.json'), findsNothing);
+  });
+
   testWidgets('an agent question is answered by picking an option', (
     tester,
   ) async {

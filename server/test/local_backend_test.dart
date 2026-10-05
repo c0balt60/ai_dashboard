@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard_server/config.dart';
@@ -7,6 +8,7 @@ import 'package:ai_dashboard_server/local_backend.dart';
 import 'package:ai_dashboard_server/runners/agent_runner.dart';
 import 'package:ai_dashboard_server/state_store.dart';
 import 'package:ai_dashboard_server/test_summary.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 class FakeTurn {
@@ -16,6 +18,7 @@ class FakeTurn {
     this.sessionId,
     this.model,
     this.effort,
+    this.attachments,
   );
 
   final String prompt;
@@ -23,6 +26,7 @@ class FakeTurn {
   final String? sessionId;
   final String? model;
   final EffortLevel? effort;
+  final List<Attachment> attachments;
   final changes = <TurnChange>[];
   final controller = StreamController<RunnerEvent>();
   var cancelled = false;
@@ -44,8 +48,16 @@ class FakeRunner implements AgentRunner {
     String? sessionId,
     String? model,
     EffortLevel? effort,
+    List<Attachment> attachments = const [],
   }) {
-    final turn = FakeTurn(prompt, workingDir, sessionId, model, effort);
+    final turn = FakeTurn(
+      prompt,
+      workingDir,
+      sessionId,
+      model,
+      effort,
+      attachments,
+    );
     turns.add(turn);
     return AgentTurn(
       turn.controller.stream,
@@ -147,6 +159,86 @@ void main() {
 
     await backend.sendPrompt('claude', 'Thanks');
     expect(runner.turns.last.sessionId, 's-1');
+  });
+
+  test('attachments are saved in the project, ignored by git and deleted with '
+      'their chat', () async {
+    final project = config.projects.single.path;
+    final backend = create();
+    addTearDown(backend.dispose);
+    final chat = await backend.createChat('claude', projectId: 'app');
+
+    await backend.sendPrompt(
+      chat.id,
+      'What broke?',
+      files: [
+        FileUpload(r'..\crash.log', Uint8List.fromList([1, 2, 3])),
+        FileUpload('crash.log', Uint8List(1)),
+      ],
+    );
+    final turn = runner.turns.single;
+    final [first, second] = turn.attachments;
+    expect(first.name, 'crash.log');
+    expect(second.name, 'crash (1).log');
+    expect(File(first.path).readAsBytesSync(), [1, 2, 3]);
+    expect(
+      p.isWithin(p.join(project, '.attachments', chat.id), first.path),
+      isTrue,
+    );
+    expect(turn.prompt, startsWith('What broke?\n\nAttached files:\n'));
+    expect(turn.prompt, contains(second.path));
+    final message = (await backend.watchMessages(chat.id).first).first;
+    expect(message.text, 'What broke?');
+    expect(message.attachments.map((a) => a.name), [first.name, second.name]);
+    turn.emit(const FinishedEvent(success: true));
+    await settle();
+
+    expect(File('$project/.attachments/.gitignore').readAsStringSync(), '*\n');
+    expect(File('$project/.gitignore').existsSync(), isFalse);
+    await expectLater(
+      backend.sendPrompt(
+        chat.id,
+        'Too big',
+        files: [FileUpload('big.bin', Uint8List(maxAttachmentBytes + 1))],
+      ),
+      throwsArgumentError,
+    );
+
+    await backend.deleteChat(chat.id);
+    expect(Directory('$project/.attachments/${chat.id}').existsSync(), isFalse);
+  });
+
+  test('a task attachment can be deleted', () async {
+    final project = config.projects.single.path;
+    final backend = create();
+    addTearDown(backend.dispose);
+    final task = await backend.createTask(
+      'Fix the crash',
+      'app',
+      files: [
+        FileUpload('crash.log', Uint8List(1)),
+        FileUpload('shot.png', Uint8List(1)),
+      ],
+    );
+    final [log, shot] = task.attachments;
+
+    await backend.deleteTaskAttachment(task.id, 'crash.log');
+    expect(File(log.path).existsSync(), isFalse);
+    var tasks = await backend.watchTasks().first;
+    expect(tasks.single.attachments.single.name, 'shot.png');
+
+    await backend.deleteTaskAttachment(task.id, 'shot.png');
+    expect(File(shot.path).existsSync(), isFalse);
+    expect(
+      Directory('$project/.attachments/tasks/${task.id}').existsSync(),
+      isFalse,
+    );
+    tasks = await backend.watchTasks().first;
+    expect(tasks.single.attachments, isEmpty);
+    await expectLater(
+      backend.deleteTaskAttachment(task.id, 'shot.png'),
+      throwsArgumentError,
+    );
   });
 
   test('steps fold into thinking and questions wait for answers', () async {

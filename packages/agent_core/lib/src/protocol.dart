@@ -34,6 +34,8 @@ abstract final class ApiPaths {
 
   static const tasks = '/api/tasks';
   static String taskState(String taskId) => '/api/tasks/$taskId/state';
+  static String taskAttachments(String taskId) =>
+      '/api/tasks/$taskId/attachments';
 
   static const todoLists = '/api/todo-lists';
   static String todoList(String listId) => '/api/todo-lists/$listId';

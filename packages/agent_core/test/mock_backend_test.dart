@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:agent_core/agent_core.dart';
 import 'package:test/test.dart';
 
@@ -34,6 +36,31 @@ void main() {
       hasLength(2),
     );
     expect(answered.last.role, MessageRole.agent);
+  });
+
+  test('attached files show on the prompt and name an untitled chat', () async {
+    final backend = MockAgentBackend(simulate: false, latency: Duration.zero);
+    addTearDown(backend.dispose);
+
+    final chat = await backend.createChat('a5', projectId: 'p3');
+    await backend.sendPrompt(
+      chat.id,
+      '',
+      files: [FileUpload('crash.log', Uint8List(10))],
+    );
+    final messages = await backend.watchMessages(chat.id).first;
+    final prompt = messages.first;
+    expect(prompt.attachments.single.name, 'crash.log');
+    expect(prompt.attachments.single.size, 10);
+    expect(prompt.attachments.single.path, contains('.attachments'));
+    expect(messages.last.text, startsWith('Opened crash.log.'));
+    final chats = await backend.watchChats().first;
+    expect(chats.singleWhere((c) => c.id == chat.id).title, 'crash.log');
+
+    expect(
+      withAttachments('Fix it', prompt.attachments),
+      'Fix it\n\nAttached files:\n- ${prompt.attachments.single.path}',
+    );
   });
 
   test('project chats keep their own history and move the agent', () async {
