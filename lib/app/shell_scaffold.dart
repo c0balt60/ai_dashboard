@@ -28,8 +28,19 @@ class ShellScaffold extends ConsumerWidget {
   void _select(int index) =>
       shell.goBranch(index, initialLocation: index == shell.currentIndex);
 
+  // Back on another tab's root goes to the dashboard first; only the
+  // dashboard lets it close the app. Pages pushed in a tab still pop first,
+  // since go_router asks the tab's own navigator before this one.
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => PopScope(
+    canPop: shell.currentIndex == 0,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) shell.goBranch(0);
+    },
+    child: _buildShell(context, ref),
+  );
+
+  Widget _buildShell(BuildContext context, WidgetRef ref) {
     final failedAgents =
         ref
             .watch(agentsProvider)
