@@ -29,7 +29,15 @@ abstract interface class AgentBackend {
   ///
   /// While the agent waits on a question in this chat, [text] answers it in
   /// the owner's own words instead.
-  Future<void> sendPrompt(String chatId, String text);
+  ///
+  /// [files] are saved on the PC (in the project's `.attachments` folder)
+  /// and the agent is told where to find them; Claude also sees images
+  /// directly. [text] may be empty when there are files.
+  Future<void> sendPrompt(
+    String chatId,
+    String text, {
+    List<FileUpload> files = const [],
+  });
 
   /// Answers the open [MessageRole.question] message [messageId], one entry
   /// per [AgentQuestion.question]: the picked option's label, several labels
@@ -82,13 +90,15 @@ abstract interface class AgentBackend {
 
   /// Creates a task. With an [agentId] it goes straight to `waiting` for that
   /// agent, otherwise to the backlog. A [todo] link keeps that to-do item's
-  /// checkbox in step with the task.
+  /// checkbox in step with the task. [files] become its
+  /// [AgentTask.attachments].
   Future<AgentTask> createTask(
     String title,
     String projectId, {
     String? agentId,
     String description = '',
     TodoLink? todo,
+    List<FileUpload> files = const [],
   });
 
   Future<void> updateTaskState(String taskId, TaskState state);

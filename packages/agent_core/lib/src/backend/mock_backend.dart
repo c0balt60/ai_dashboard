@@ -94,12 +94,19 @@ class MockAgentBackend implements AgentBackend {
       _watch(() => List.unmodifiable(_options.values));
 
   @override
-  Future<void> sendPrompt(String chatId, String text) async {
+  Future<void> sendPrompt(
+    String chatId,
+    String text, {
+    List<FileUpload> files = const [],
+  }) async {
     final chat = _chats[chatId];
     final agent = chat == null ? null : _agents[chat.agentId];
     if (chat == null || agent == null) return;
+    final dir =
+        _projects[chat.projectId]?.path ?? agent.workingDir ?? r'C:\scratch';
+    final attachments = _attach(files, '$dir\\.attachments\\$chatId');
     _closeQuestions(chatId, const {});
-    _addMessage(chatId, MessageRole.user, text);
+    _addMessage(chatId, MessageRole.user, text, attachments: attachments);
     final command = parseSlashCommand(text);
     if (command != null && _runBuiltin(chatId, agent, command)) {
       _notify();
@@ -108,7 +115,8 @@ class MockAgentBackend implements AgentBackend {
     final project = _projects[chat.projectId];
     _agents[agent.id] = agent.copyWith(
       status: AgentStatus.running,
-      activity: 'Thinking about: ${_truncate(text, 40)}',
+      activity:
+          'Thinking about: ${_truncate(_describe(text, attachments), 40)}',
       lastActive: DateTime.now(),
       projectId: project == null ? null : () => project.id,
       workingDir: project == null || agent.projectId == project.id
@@ -128,7 +136,17 @@ class MockAgentBackend implements AgentBackend {
         _ask(chatId, current);
         return;
       }
-      _addMessage(chatId, MessageRole.agent, _replyTo(current, chat, text));
+      final reply = text.isEmpty
+          ? 'What would you like me to do with '
+                '${attachments.length == 1 ? 'it' : 'them'}?'
+          : _replyTo(current, chat, text);
+      _addMessage(
+        chatId,
+        MessageRole.agent,
+        attachments.isEmpty
+            ? reply
+            : 'Opened ${attachments.map((a) => a.name).join(', ')}.\n\n$reply',
+      );
       _useContext(chatId, 2500 + _random.nextInt(6000));
       _useLimits(0.004);
     } else {
@@ -365,7 +383,14 @@ class MockAgentBackend implements AgentBackend {
 
     final chat = _chatFor(agentId, projectId);
     _addMessage(chat.id, MessageRole.system, 'Assigned to $workingDir');
-    if (task != null) _addMessage(chat.id, MessageRole.user, task.brief);
+    if (task != null) {
+      _addMessage(
+        chat.id,
+        MessageRole.user,
+        task.brief,
+        attachments: task.attachments,
+      );
+    }
     _log(projectId, '${agent.name} assigned to $workingDir', agentId: agentId);
     _notify();
   }
@@ -432,15 +457,21 @@ class MockAgentBackend implements AgentBackend {
     String? agentId,
     String description = '',
     TodoLink? todo,
+    List<FileUpload> files = const [],
   }) async {
     final now = DateTime.now();
+    final id = _nextId('t');
     final task = AgentTask(
-      id: _nextId('t'),
+      id: id,
       title: title,
       description: description,
       projectId: projectId,
       agentId: agentId,
       todo: todo,
+      attachments: _attach(
+        files,
+        '${_projects[projectId]?.path}\\.attachments\\tasks\\$id',
+      ),
       state: agentId == null ? TaskState.backlog : TaskState.waiting,
       steps: _defaultSteps(title),
       createdAt: now,
@@ -732,6 +763,7 @@ class MockAgentBackend implements AgentBackend {
         _chatFor(agent.id, project.id).id,
         MessageRole.user,
         task.brief,
+        attachments: task.attachments,
       );
       _log(
         project.id,
@@ -954,6 +986,7 @@ class MockAgentBackend implements AgentBackend {
     String text, {
     List<String> steps = const [],
     List<AgentQuestion> questions = const [],
+    List<Attachment> attachments = const [],
   }) {
     final chat = _chats[chatId];
     if (chat == null) return;
@@ -967,15 +1000,22 @@ class MockAgentBackend implements AgentBackend {
         at: now,
         steps: steps,
         questions: questions,
+        attachments: attachments,
       ),
     );
     _chats[chatId] = chat.copyWith(
       updatedAt: now,
       title: role == MessageRole.user && chat.title.isEmpty
-          ? _truncate(text, 40)
+          ? _truncate(_describe(text, attachments), 40)
           : null,
     );
   }
+
+  /// Pretends to save [files] in [dir] on the PC.
+  List<Attachment> _attach(List<FileUpload> files, String dir) => [
+    for (final f in files)
+      Attachment(name: f.name, size: f.bytes.length, path: '$dir\\${f.name}'),
+  ];
 
   void _log(
     String projectId,
@@ -1081,6 +1121,9 @@ class MockAgentBackend implements AgentBackend {
     }
     return '> $command\n(mock) command executed in ${project.path}';
   }
+
+  static String _describe(String text, List<Attachment> files) =>
+      text.isEmpty && files.isNotEmpty ? files.first.name : text;
 
   static String _truncate(String s, int max) =>
       s.length <= max ? s : '${s.substring(0, max - 1)}…';

@@ -1,3 +1,4 @@
+import 'attachment.dart';
 import 'enums.dart';
 import 'json.dart';
 
@@ -40,6 +41,7 @@ class AgentTask {
     this.description = '',
     this.agentId,
     this.todo,
+    this.attachments = const [],
     this.progress = 0,
     this.steps = const [],
     this.completedAt,
@@ -58,6 +60,7 @@ class AgentTask {
       final Json link => TodoLink.fromJson(link),
       _ => null,
     },
+    attachments: decodeList(json['attachments'], Attachment.fromJson),
     progress: (json['progress'] as num? ?? 0).toDouble(),
     steps: decodeList(json['steps'], TaskStep.fromJson),
     completedAt: decodeTimeOrNull(json['completedAt']),
@@ -71,6 +74,9 @@ class AgentTask {
   final String projectId;
   final String? agentId;
   final TodoLink? todo;
+
+  /// Files the agent gets along with the [brief].
+  final List<Attachment> attachments;
   final TaskState state;
 
   final double progress;
@@ -93,6 +99,8 @@ class AgentTask {
     'projectId': projectId,
     'agentId': ?agentId,
     if (todo case final link?) 'todo': link.toJson(),
+    if (attachments.isNotEmpty)
+      'attachments': [for (final a in attachments) a.toJson()],
     'state': state.name,
     'progress': progress,
     'steps': [for (final s in steps) s.toJson()],
@@ -115,6 +123,7 @@ class AgentTask {
       description: description,
       projectId: projectId,
       todo: todo,
+      attachments: attachments,
       createdAt: createdAt,
       state: state ?? this.state,
       agentId: agentId != null ? agentId() : this.agentId,

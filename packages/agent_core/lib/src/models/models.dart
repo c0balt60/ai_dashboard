@@ -2,6 +2,7 @@ export 'agent.dart';
 export 'agent_chat.dart';
 export 'agent_options.dart';
 export 'agent_task.dart';
+export 'attachment.dart';
 export 'chat_message.dart';
 export 'enums.dart';
 export 'json.dart' show Json;

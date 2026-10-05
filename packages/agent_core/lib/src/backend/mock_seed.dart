@@ -751,12 +751,19 @@ class MockSeed {
         r'Assigned to C:\dev\ai_dashboard\lib\features',
         _ago(hours: 1, minutes: 30),
       ),
-      _msg(
-        'm6',
-        'a2',
-        MessageRole.user,
-        'Build the agent chat screen with bubbles and a composer.',
-        _ago(hours: 1, minutes: 30),
+      ChatMessage(
+        id: 'm6',
+        agentId: 'a2',
+        role: MessageRole.user,
+        text: 'Build the agent chat screen with bubbles and a composer.',
+        at: _ago(hours: 1, minutes: 30),
+        attachments: const [
+          Attachment(
+            name: 'chat-mockup.png',
+            size: 284133,
+            path: r'C:\dev\ai_dashboard\.attachments\c2\chat-mockup.png',
+          ),
+        ],
       ),
       _msg(
         'm7',
