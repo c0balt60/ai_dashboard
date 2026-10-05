@@ -354,6 +354,13 @@ class HttpAgentBackend implements AgentBackend {
       _request('PUT', ApiPaths.taskState(taskId), body: {'state': state.name});
 
   @override
+  Future<void> deleteTaskAttachment(String taskId, String name) => _request(
+    'DELETE',
+    ApiPaths.taskAttachments(taskId),
+    body: {'name': name},
+  );
+
+  @override
   Future<TodoList> createTodoList(String title) async => TodoList.fromJson(
     await _request('POST', ApiPaths.todoLists, body: {'title': title}),
   );

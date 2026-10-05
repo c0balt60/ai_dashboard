@@ -204,6 +204,26 @@ void main() {
     expect(find.text('Assign to folder / task'), findsOneWidget);
   });
 
+  testWidgets('a task attachment is deleted from the task details', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .go(AppRoutes.tasks);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(
+      find.textContaining('Implement Stripe webhook handler').first,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('stripe-event.json'), findsOneWidget);
+    await tester.tap(find.byTooltip('Remove stripe-event.json'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('stripe-event.json'), findsNothing);
+  });
+
   testWidgets('an agent question is answered by picking an option', (
     tester,
   ) async {
