@@ -81,6 +81,32 @@ void main() {
     expect(sentTo('tasks'), isEmpty);
   });
 
+  test('a question says what the agent asks instead of a reply', () async {
+    push
+      ..register(
+        const PushDevice(
+          token: 'questions',
+          events: {PushEvent.asked, PushEvent.replied},
+        ),
+      )
+      ..register(
+        const PushDevice(token: 'replies', events: {PushEvent.replied}),
+      );
+
+    await backend.sendPrompt('a5', 'Help me plan my next feature');
+    await settle();
+
+    final [question] = sentTo('questions');
+    expect(question.title, 'Aider has 2 questions');
+    expect(
+      question.body,
+      'Which part of the app should the feature go in? Options: Dashboard, '
+      'Projects or Settings (+1 more question)',
+    );
+    expect(question.data, {'agentId': 'a5', 'chatId': 'a5'});
+    expect(sentTo('replies'), isEmpty);
+  });
+
   test('only tasks an agent was working on notify', () async {
     push.register(
       const PushDevice(

@@ -37,6 +37,23 @@ final class ReplyEvent extends RunnerEvent {
   final String text;
 }
 
+/// One step on the agent's way to its reply: its reasoning, a remark it made
+/// between tool calls, or a tool it used. Gathered into a thinking message.
+final class ThinkingEvent extends RunnerEvent {
+  const ThinkingEvent(this.text);
+
+  final String text;
+}
+
+/// The agent asked the owner [questions] and waits until the turn gets a
+/// [QuestionAnswer] with the same [id].
+final class QuestionEvent extends RunnerEvent {
+  const QuestionEvent(this.id, this.questions);
+
+  final String id;
+  final List<AgentQuestion> questions;
+}
+
 /// Something about the turn itself worth a line in the chat, such as a
 /// finished `/compact`.
 final class NoticeEvent extends RunnerEvent {
@@ -106,6 +123,16 @@ final class EffortChange extends TurnChange {
   const EffortChange(this.effort);
 
   final EffortLevel? effort;
+}
+
+/// The owner's answers to the [QuestionEvent] [id], keyed by question, or a
+/// [response] in their own words instead.
+final class QuestionAnswer extends TurnChange {
+  const QuestionAnswer(this.id, {this.answers = const {}, this.response});
+
+  final String id;
+  final Map<String, String> answers;
+  final String? response;
 }
 
 /// One turn in progress. [events] always ends with a [FinishedEvent].
@@ -188,6 +215,10 @@ abstract class CliRunner implements AgentRunner {
   /// The stdin line that applies [change] mid-turn, or null when the CLI
   /// can't.
   String? encodeChange(TurnChange change) => null;
+
+  /// A stdin line that answers [line] straight away, for requests from the
+  /// CLI that need no one's input.
+  String? replyTo(String line) => null;
 
   Iterable<RunnerEvent> parseLine(String line);
 
@@ -306,6 +337,9 @@ abstract class CliRunner implements AgentRunner {
             in started.stdout
                 .transform(decoder)
                 .transform(const LineSplitter())) {
+          if (replyTo(line) case final reply? when inputOpen) {
+            started.stdin.writeln(reply);
+          }
           for (final event in parseLine(line)) {
             if (event is FinishedEvent) {
               reported ??= event;

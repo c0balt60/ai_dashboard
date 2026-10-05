@@ -70,6 +70,18 @@ class LocalAgentBackend implements AgentBackend {
   final _discovering = <String>{};
   final _turns = <String, AgentTurn>{};
   final _turnChats = <String, String>{};
+
+  /// What each running turn said last. It is the reply if the turn ends
+  /// next, otherwise a step of its thinking.
+  final _heldReplies = <String, String>{};
+
+  /// The thinking message each running turn adds its steps to.
+  final _thinking = <String, String>{};
+
+  /// The question messages agents wait on, with the agent and the id its
+  /// turn knows the question by.
+  final _openQuestions =
+      <String, ({String agentId, String chatId, String id})>{};
   final _testing = <String>{};
   final _changes = StreamController<void>.broadcast();
   var _idCounter = 0;
@@ -191,8 +203,13 @@ class LocalAgentBackend implements AgentBackend {
     // id of each agent's default chat.
     (saved?['messages'] as Json? ?? const {}).forEach((chatId, list) {
       if (!_chats.containsKey(chatId)) return;
+      // The turns that asked any open question ended with the server.
       _messages[chatId] = [
-        for (final m in list as List) ChatMessage.fromJson(m as Json),
+        for (final m in list as List)
+          switch (ChatMessage.fromJson(m as Json)) {
+            final m when m.isOpenQuestion => m.copyWith(answers: () => {}),
+            final m => m,
+          },
       ];
     });
 
@@ -289,20 +306,28 @@ class LocalAgentBackend implements AgentBackend {
         null => agent.id,
       };
 
-  void _addMessage(String chatId, MessageRole role, String text) {
+  /// Returns the new message's id, or null when the chat is gone.
+  String? _addMessage(
+    String chatId,
+    MessageRole role,
+    String text, {
+    List<String> steps = const [],
+    List<AgentQuestion> questions = const [],
+  }) {
     final chat = _chats[chatId];
-    if (chat == null) return;
+    if (chat == null) return null;
     final now = DateTime.now();
     final list = _messages.putIfAbsent(chatId, () => []);
-    list.add(
-      ChatMessage(
-        id: _nextId('m'),
-        agentId: chat.agentId,
-        role: role,
-        text: text,
-        at: now,
-      ),
+    final message = ChatMessage(
+      id: _nextId('m'),
+      agentId: chat.agentId,
+      role: role,
+      text: text,
+      at: now,
+      steps: steps,
+      questions: questions,
     );
+    list.add(message);
     if (list.length > _maxMessages) {
       list.removeRange(0, list.length - _maxMessages);
     }
@@ -312,6 +337,73 @@ class LocalAgentBackend implements AgentBackend {
           ? truncate(text, 40)
           : null,
     );
+    return message.id;
+  }
+
+  /// Replaces message [id] in [chatId] with [change] applied. Returns false
+  /// when it is no longer there.
+  bool _updateMessage(
+    String chatId,
+    String id,
+    ChatMessage Function(ChatMessage) change,
+  ) {
+    final list = _messages[chatId];
+    final index = list?.indexWhere((m) => m.id == id) ?? -1;
+    if (index < 0) return false;
+    list![index] = change(list[index]);
+    return true;
+  }
+
+  static const _maxSteps = 200;
+
+  /// Adds [step] to the running turn's thinking message, starting one when
+  /// the turn has none yet.
+  void _addStep(String agentId, String chatId, String step) {
+    final id = _thinking[agentId];
+    final added =
+        id != null &&
+        _updateMessage(chatId, id, (m) {
+          final steps = [...m.steps, step];
+          return m.copyWith(
+            steps: steps.length > _maxSteps
+                ? steps.sublist(steps.length - _maxSteps)
+                : steps,
+          );
+        });
+    if (added) return;
+    final started = _addMessage(
+      chatId,
+      MessageRole.thinking,
+      '',
+      steps: [step],
+    );
+    if (started != null) _thinking[agentId] = started;
+  }
+
+  /// Turns what the agent said last into a thinking step, since it kept on
+  /// working after it.
+  void _stepPastReply(String agentId, String chatId) {
+    if (_heldReplies.remove(agentId) case final text?) {
+      _addStep(agentId, chatId, text);
+    }
+  }
+
+  /// Forgets the turn's thinking and gives up on its open questions, posting
+  /// what it said last as its reply when [reply] is set.
+  void _endTurn(String agentId, String chatId, {required bool reply}) {
+    if (reply) {
+      if (_heldReplies.remove(agentId) case final text?) {
+        _addMessage(chatId, MessageRole.agent, text);
+      }
+    } else {
+      _stepPastReply(agentId, chatId);
+    }
+    _thinking.remove(agentId);
+    _openQuestions.removeWhere((messageId, q) {
+      if (q.agentId != agentId) return false;
+      _updateMessage(q.chatId, messageId, (m) => m.copyWith(answers: () => {}));
+      return true;
+    });
   }
 
   /// Stores [task] and keeps its linked to-do in step: ticked when the task
@@ -396,7 +488,12 @@ class LocalAgentBackend implements AgentBackend {
       _notify();
       return;
     }
-    if (_turns.containsKey(agent.id)) {
+    final open = _openQuestions.entries
+        .where((e) => e.value.chatId == chatId)
+        .firstOrNull;
+    if (open != null) {
+      _answer(open.key, const {}, response: text);
+    } else if (_turns.containsKey(agent.id)) {
       _addMessage(
         chatId,
         MessageRole.system,
@@ -412,6 +509,53 @@ class LocalAgentBackend implements AgentBackend {
       );
     }
     _notify();
+  }
+
+  @override
+  Future<void> answerQuestion(
+    String chatId,
+    String messageId,
+    Map<String, String> answers,
+  ) async {
+    final open = _openQuestions[messageId];
+    if (open == null || open.chatId != chatId) {
+      throw ArgumentError('That question is no longer waiting for an answer');
+    }
+    _answer(messageId, answers);
+    _notify();
+  }
+
+  /// Hands the answers to the turn that asked, which carries on with them.
+  void _answer(
+    String messageId,
+    Map<String, String> answers, {
+    String? response,
+  }) {
+    final open = _openQuestions.remove(messageId)!;
+    _updateMessage(
+      open.chatId,
+      messageId,
+      (m) => m.copyWith(answers: () => answers),
+    );
+    final turn = _turns[open.agentId];
+    final sent =
+        turn != null &&
+        turn.apply(
+          QuestionAnswer(open.id, answers: answers, response: response),
+        );
+    if (!sent) {
+      _addMessage(
+        open.chatId,
+        MessageRole.system,
+        'The agent stopped before it got your answer',
+      );
+      return;
+    }
+    _agents[open.agentId] = _agents[open.agentId]!.copyWith(
+      status: AgentStatus.running,
+      activity: 'Carrying on with your answer',
+      lastActive: DateTime.now(),
+    );
   }
 
   @override
@@ -685,7 +829,9 @@ class LocalAgentBackend implements AgentBackend {
 
     if (isCurrent && state != TaskState.active) {
       _turns.remove(agent.id)?.cancel();
-      _turnChats.remove(agent.id);
+      if (_turnChats.remove(agent.id) case final chatId?) {
+        _endTurn(agent.id, chatId, reply: false);
+      }
     }
     _putTask(
       task.copyWith(
@@ -976,9 +1122,40 @@ class LocalAgentBackend implements AgentBackend {
           );
         }
       case ReplyEvent(:final text):
-        _addMessage(chatId, MessageRole.agent, text);
+        _stepPastReply(agentId, chatId);
+        _heldReplies[agentId] = text;
         _agents[agentId] = agent.copyWith(lastActive: now);
+      case ThinkingEvent(:final text):
+        _stepPastReply(agentId, chatId);
+        _addStep(agentId, chatId, text);
+      case QuestionEvent(:final id, :final questions):
+        _stepPastReply(agentId, chatId);
+        // Whatever the agent does after the answer gets a thinking message
+        // of its own, below the question.
+        _thinking.remove(agentId);
+        if (_addMessage(
+              chatId,
+              MessageRole.question,
+              describeQuestions(questions),
+              questions: questions,
+            )
+            case final messageId?) {
+          _openQuestions[messageId] = (
+            agentId: agentId,
+            chatId: chatId,
+            id: id,
+          );
+        }
+        _agents[agentId] = agent.copyWith(
+          status: AgentStatus.waiting,
+          activity: questions.length == 1
+              ? 'Waiting for your answer'
+              : 'Waiting for your answers',
+          lastActive: now,
+        );
       case NoticeEvent(:final text):
+        _stepPastReply(agentId, chatId);
+        _thinking.remove(agentId);
         _addMessage(chatId, MessageRole.system, text);
       case ModelEvent(:final model):
         _agents[agentId] = agent.copyWith(activeModel: model);
@@ -1032,6 +1209,7 @@ class LocalAgentBackend implements AgentBackend {
   ) {
     _turns.remove(agent.id);
     _turnChats.remove(agent.id);
+    _endTurn(agent.id, chatId, reply: true);
     final now = DateTime.now();
     final ok = event.success;
     final error = event.error ?? 'unknown error';
@@ -1113,8 +1291,9 @@ class LocalAgentBackend implements AgentBackend {
     TaskState requeueAs = TaskState.waiting,
   }) async {
     final turn = _turns.remove(agentId);
-    _turnChats.remove(agentId);
+    final chatId = _turnChats.remove(agentId);
     if (turn == null) return;
+    if (chatId != null) _endTurn(agentId, chatId, reply: false);
     final taskId = _agents[agentId]?.currentTaskId;
     if (_tasks[taskId] case final task?) {
       _putTask(
