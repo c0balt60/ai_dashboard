@@ -98,6 +98,7 @@ class MockAgentBackend implements AgentBackend {
     final chat = _chats[chatId];
     final agent = chat == null ? null : _agents[chat.agentId];
     if (chat == null || agent == null) return;
+    _closeQuestions(chatId, const {});
     _addMessage(chatId, MessageRole.user, text);
     final command = parseSlashCommand(text);
     if (command != null && _runBuiltin(chatId, agent, command)) {
@@ -122,6 +123,11 @@ class MockAgentBackend implements AgentBackend {
     if (current == null || _changes.isClosed) return;
 
     if (command == null) {
+      _addThinking(chatId, current, chat);
+      if (text.toLowerCase().contains('plan')) {
+        _ask(chatId, current);
+        return;
+      }
       _addMessage(chatId, MessageRole.agent, _replyTo(current, chat, text));
       _useContext(chatId, 2500 + _random.nextInt(6000));
       _useLimits(0.004);
@@ -134,6 +140,110 @@ class MockAgentBackend implements AgentBackend {
       activity: activeTask != null
           ? _nextStepTitle(activeTask)
           : 'Waiting for your next instruction',
+      lastActive: DateTime.now(),
+    );
+    _notify();
+  }
+
+  @override
+  Future<void> answerQuestion(
+    String chatId,
+    String messageId,
+    Map<String, String> answers,
+  ) async {
+    final chat = _chats[chatId];
+    final agent = chat == null ? null : _agents[chat.agentId];
+    final list = _messages[chatId] ?? const <ChatMessage>[];
+    if (agent == null || !list.any((m) => m.id == messageId)) return;
+    _closeQuestions(chatId, answers);
+    _agents[agent.id] = agent.copyWith(
+      status: AgentStatus.running,
+      activity: 'Planning with your answers',
+      lastActive: DateTime.now(),
+    );
+    _notify();
+
+    await Future<void>.delayed(latency);
+    final current = _agents[agent.id];
+    if (current == null || _changes.isClosed) return;
+    _addMessage(
+      chatId,
+      MessageRole.agent,
+      'Thanks! Here is the plan:\n\n'
+      '${[for (final e in answers.entries) '- **${e.key}** ${e.value}'].join('\n')}'
+      '\n\nI\'ll start with the smallest piece and report back.',
+    );
+    _agents[agent.id] = current.copyWith(
+      status: AgentStatus.waiting,
+      activity: 'Waiting for your next instruction',
+      lastActive: DateTime.now(),
+    );
+    _notify();
+  }
+
+  /// Gives every open question in [chatId] its [answers].
+  void _closeQuestions(String chatId, Map<String, String> answers) {
+    final list = _messages[chatId];
+    if (list == null) return;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].isOpenQuestion) {
+        list[i] = list[i].copyWith(answers: () => answers);
+      }
+    }
+  }
+
+  void _addThinking(String chatId, Agent agent, AgentChat chat) {
+    final dir =
+        _projects[chat.projectId]?.path ??
+        agent.workingDir ??
+        'a scratch folder';
+    _addMessage(
+      chatId,
+      MessageRole.thinking,
+      '',
+      steps: [
+        'Let me look around $dir first.',
+        'Searching the code',
+        'Reading README.md',
+        'I have enough context to answer.',
+      ],
+    );
+  }
+
+  /// Asks the kind of questions Claude Code asks before planning a feature.
+  void _ask(String chatId, Agent agent) {
+    const questions = [
+      AgentQuestion(
+        question: 'Which part of the app should the feature go in?',
+        header: 'Area',
+        options: [
+          QuestionOption(
+            'Dashboard',
+            description: 'A new card on the home tab',
+          ),
+          QuestionOption('Projects', description: 'Inside each project page'),
+          QuestionOption('Settings', description: 'A new settings section'),
+        ],
+      ),
+      AgentQuestion(
+        question: 'What should come with it?',
+        header: 'Extras',
+        multiSelect: true,
+        options: [
+          QuestionOption('Tests', description: 'Widget and unit tests'),
+          QuestionOption('Docs', description: 'An AGENTS.md update'),
+        ],
+      ),
+    ];
+    _addMessage(
+      chatId,
+      MessageRole.question,
+      describeQuestions(questions),
+      questions: questions,
+    );
+    _agents[agent.id] = agent.copyWith(
+      status: AgentStatus.waiting,
+      activity: 'Waiting for your answers',
       lastActive: DateTime.now(),
     );
     _notify();
@@ -838,7 +948,13 @@ class MockAgentBackend implements AgentBackend {
     return _chats[chat.id] = chat;
   }
 
-  void _addMessage(String chatId, MessageRole role, String text) {
+  void _addMessage(
+    String chatId,
+    MessageRole role,
+    String text, {
+    List<String> steps = const [],
+    List<AgentQuestion> questions = const [],
+  }) {
     final chat = _chats[chatId];
     if (chat == null) return;
     final now = DateTime.now();
@@ -849,6 +965,8 @@ class MockAgentBackend implements AgentBackend {
         role: role,
         text: text,
         at: now,
+        steps: steps,
+        questions: questions,
       ),
     );
     _chats[chatId] = chat.copyWith(

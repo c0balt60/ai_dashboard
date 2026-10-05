@@ -9,6 +9,9 @@ enum PushEvent {
   /// An agent finished a task.
   completed,
 
+  /// An agent asked a question and waits for the answer.
+  asked,
+
   /// An agent answered in a chat.
   replied,
 

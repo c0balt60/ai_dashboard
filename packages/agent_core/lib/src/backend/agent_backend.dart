@@ -26,7 +26,19 @@ abstract interface class AgentBackend {
   /// A prompt starting with `/` runs one of the agent's
   /// [AgentOptions.commands]. `/model`, `/effort` and `/clear` are handled by
   /// the backend itself, so they work while the agent is busy too.
+  ///
+  /// While the agent waits on a question in this chat, [text] answers it in
+  /// the owner's own words instead.
   Future<void> sendPrompt(String chatId, String text);
+
+  /// Answers the open [MessageRole.question] message [messageId], one entry
+  /// per [AgentQuestion.question]: the picked option's label, several labels
+  /// joined with ", ", or the owner's own text. The agent then carries on.
+  Future<void> answerQuestion(
+    String chatId,
+    String messageId,
+    Map<String, String> answers,
+  );
 
   /// Starts a chat with [agentId], in [projectId] or general purpose.
   Future<AgentChat> createChat(

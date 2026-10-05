@@ -36,6 +36,8 @@ enum TaskState { active, waiting, backlog, completed, failed }
 
 enum TestStatus { running, passed, failed }
 
-enum MessageRole { user, agent, system }
+/// Who a chat message is from. [thinking] holds an agent's steps between
+/// replies and [question] a question it waits on.
+enum MessageRole { user, agent, system, thinking, question }
 
 enum LogLevel { info, success, warning, error }
