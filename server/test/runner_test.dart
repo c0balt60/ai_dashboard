@@ -291,6 +291,31 @@ Future<void> main(List<String> args) async {
     expect(((prompt as Json)['message'] as Json)['content'], '/compact');
   });
 
+  test('Claude gets image attachments as image blocks before the text', () {
+    final dir = Directory.systemTemp.createTempSync('claude_images');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final image = File('${dir.path}/shot.png')..writeAsBytesSync([1, 2, 3]);
+    final message = claudeUserMessage(
+      'What is wrong here?',
+      attachments: [
+        Attachment(name: 'shot.png', size: 3, path: image.path),
+        const Attachment(name: 'log.txt', size: 3, path: 'log.txt'),
+        const Attachment(name: 'gone.png', size: 3, path: 'missing.png'),
+      ],
+    );
+    expect((message['message'] as Json)['content'], [
+      {
+        'type': 'image',
+        'source': {
+          'type': 'base64',
+          'media_type': 'image/png',
+          'data': base64Encode([1, 2, 3]),
+        },
+      },
+      {'type': 'text', 'text': 'What is wrong here?'},
+    ]);
+  });
+
   test('AskUserQuestion waits for answers and other tools are allowed', () {
     final runner = ClaudeCodeRunner(
       const AgentConfig(id: 'c', name: 'Claude', type: AgentType.claudeCode),

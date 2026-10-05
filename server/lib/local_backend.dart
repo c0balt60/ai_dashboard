@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:agent_core/agent_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'attachments.dart';
 import 'config.dart';
 import 'process_utils.dart';
 import 'runners/agent_runner.dart';
@@ -313,6 +314,7 @@ class LocalAgentBackend implements AgentBackend {
     String text, {
     List<String> steps = const [],
     List<AgentQuestion> questions = const [],
+    List<Attachment> attachments = const [],
   }) {
     final chat = _chats[chatId];
     if (chat == null) return null;
@@ -326,6 +328,7 @@ class LocalAgentBackend implements AgentBackend {
       at: now,
       steps: steps,
       questions: questions,
+      attachments: attachments,
     );
     list.add(message);
     if (list.length > _maxMessages) {
@@ -334,7 +337,12 @@ class LocalAgentBackend implements AgentBackend {
     _chats[chatId] = chat.copyWith(
       updatedAt: now,
       title: role == MessageRole.user && chat.title.isEmpty
-          ? truncate(text, 40)
+          ? truncate(
+              text.isEmpty && attachments.isNotEmpty
+                  ? attachments.first.name
+                  : text,
+              40,
+            )
           : null,
     );
     return message.id;
@@ -479,20 +487,35 @@ class LocalAgentBackend implements AgentBackend {
       _watch(() => List.unmodifiable(_options.values));
 
   @override
-  Future<void> sendPrompt(String chatId, String text) async {
+  Future<void> sendPrompt(
+    String chatId,
+    String text, {
+    List<FileUpload> files = const [],
+  }) async {
     final chat = _requireChat(chatId);
     final agent = _requireAgent(chat.agentId);
-    _addMessage(chatId, MessageRole.user, text);
+    final attachments = files.isEmpty
+        ? const <Attachment>[]
+        : _save(files, switch (chat.projectId) {
+            null => _workingDirOf(agent) ?? _scratchDir,
+            final projectId =>
+              _projectPath(projectId) ??
+                  (throw ArgumentError(
+                    "This chat's project is no longer on the PC.",
+                  )),
+          }, chatId);
+    _addMessage(chatId, MessageRole.user, text, attachments: attachments);
     final command = parseSlashCommand(text);
     if (command != null && await _runBuiltin(chatId, agent, command)) {
       _notify();
       return;
     }
+    final prompt = withAttachments(text, attachments);
     final open = _openQuestions.entries
         .where((e) => e.value.chatId == chatId)
         .firstOrNull;
     if (open != null) {
-      _answer(open.key, const {}, response: text);
+      _answer(open.key, const {}, response: prompt);
     } else if (_turns.containsKey(agent.id)) {
       _addMessage(
         chatId,
@@ -500,7 +523,7 @@ class LocalAgentBackend implements AgentBackend {
         '${agent.name} is still busy. Wait for it or stop it first.',
       );
     } else if (_dirFor(agent, chat.projectId) case final dir?) {
-      _startTurn(agent, chatId, text, dir);
+      _startTurn(agent, chatId, prompt, dir, attachments: attachments);
     } else {
       _addMessage(
         chatId,
@@ -590,12 +613,21 @@ class LocalAgentBackend implements AgentBackend {
 
   @override
   Future<void> deleteChat(String chatId) async {
-    if (_requireChat(chatId).isDefault) {
+    final chat = _requireChat(chatId);
+    if (chat.isDefault) {
       throw ArgumentError("An agent's general chat can't be deleted");
     }
     _chats.remove(chatId);
     _messages.remove(chatId);
     _sessions.remove(chatId);
+    if (_projectPath(chat.projectId) case final dir?) {
+      final files = Directory(p.join(dir, attachmentsFolder, chatId));
+      try {
+        if (files.existsSync()) files.deleteSync(recursive: true);
+      } on FileSystemException catch (e) {
+        stderr.writeln('Could not delete ${files.path}: ${e.message}');
+      }
+    }
     _notify();
   }
 
@@ -794,19 +826,24 @@ class LocalAgentBackend implements AgentBackend {
     String? agentId,
     String description = '',
     TodoLink? todo,
+    List<FileUpload> files = const [],
   }) async {
     if (!_projects.containsKey(projectId)) {
       throw ArgumentError('Unknown project $projectId');
     }
     if (agentId != null) _requireAgent(agentId);
     final now = DateTime.now();
+    final id = _nextId('t');
     final task = AgentTask(
-      id: _nextId('t'),
+      id: id,
       title: title,
       description: description.trim(),
       projectId: projectId,
       agentId: agentId,
       todo: todo,
+      attachments: files.isEmpty
+          ? const []
+          : _save(files, _projectPath(projectId)!, p.join('tasks', id)),
       state: agentId == null ? TaskState.backlog : TaskState.waiting,
       createdAt: now,
       updatedAt: now,
@@ -1032,6 +1069,7 @@ class LocalAgentBackend implements AgentBackend {
     String prompt,
     String dir, {
     AgentTask? task,
+    List<Attachment> attachments = const [],
   }) {
     final now = DateTime.now();
     final session = _sessions[chatId];
@@ -1043,6 +1081,7 @@ class LocalAgentBackend implements AgentBackend {
       model: agent.model,
       // A model without effort levels would reject the flag.
       effort: option != null && option.efforts.isEmpty ? null : agent.effort,
+      attachments: attachments,
     );
     _turns[agent.id] = turn;
     _turnChats[agent.id] = chatId;
@@ -1331,16 +1370,41 @@ class LocalAgentBackend implements AgentBackend {
   /// the task's title and notes there as the prompt.
   void _startTask(Agent agent, AgentTask task, String dir) {
     final chat = _chatFor(agent.id, task.projectId);
-    _addMessage(chat.id, MessageRole.user, task.brief);
+    _addMessage(
+      chat.id,
+      MessageRole.user,
+      task.brief,
+      attachments: task.attachments,
+    );
     _startTurn(
       agent,
       chat.id,
-      '${task.brief}\n\n'
-      'Work on this in the current project. When you are done, summarize '
-      'what you changed.',
+      withAttachments(
+        '${task.brief}\n\n'
+        'Work on this in the current project. When you are done, summarize '
+        'what you changed.',
+        task.attachments,
+      ),
       dir,
       task: task,
+      attachments: task.attachments,
     );
+  }
+
+  /// Saves [files] under [dir]/.attachments/[folder], each under a name not
+  /// taken yet, and keeps the folder out of git when [dir] is in a repo.
+  List<Attachment> _save(List<FileUpload> files, String dir, String folder) {
+    for (final f in files) {
+      if (f.bytes.length > maxAttachmentBytes) {
+        throw ArgumentError(
+          '${f.name} is larger than ${maxAttachmentBytes ~/ (1024 * 1024)} MB',
+        );
+      }
+    }
+    final target = Directory(p.join(dir, attachmentsFolder, folder))
+      ..createSync(recursive: true);
+    if (!p.isWithin(config.dataDir, dir)) ignoreAttachments(dir);
+    return [for (final f in files) saveUpload(target.path, f)];
   }
 
   Future<void> _runTests(String projectId, String? agentId) async {

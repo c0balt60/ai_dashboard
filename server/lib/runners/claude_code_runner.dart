@@ -69,6 +69,7 @@ class ClaudeCodeRunner extends CliRunner {
     String? sessionId,
     String? model,
     EffortLevel? effort,
+    List<Attachment> attachments = const [],
   }) {
     _parser = ClaudeStreamParser();
     return super.start(
@@ -77,12 +78,17 @@ class ClaudeCodeRunner extends CliRunner {
       sessionId: sessionId,
       model: model,
       effort: effort,
+      attachments: attachments,
     );
   }
 
   @override
-  List<int> encodePrompt(String prompt) =>
-      utf8.encode('${jsonEncode(claudeUserMessage(prompt))}\n');
+  List<int> encodePrompt(
+    String prompt, {
+    List<Attachment> attachments = const [],
+  }) => utf8.encode(
+    '${jsonEncode(claudeUserMessage(prompt, attachments: attachments))}\n',
+  );
 
   @override
   String? encodeChange(TurnChange change) => jsonEncode(switch (change) {
@@ -180,12 +186,50 @@ Json claudeControlResponse(String requestId, Json response) => {
   },
 };
 
-Json claudeUserMessage(String prompt) => {
-  'type': 'user',
-  'message': {'role': 'user', 'content': prompt},
-  'parent_tool_use_id': null,
-  'session_id': '',
-};
+/// The user message that starts a turn. Image [attachments] go in as image
+/// blocks ahead of the text, so Claude sees them without opening the files.
+Json claudeUserMessage(
+  String prompt, {
+  List<Attachment> attachments = const [],
+}) {
+  final images = [for (final a in attachments) ?_imageBlock(a)];
+  return {
+    'type': 'user',
+    'message': {
+      'role': 'user',
+      'content': images.isEmpty
+          ? prompt
+          : [
+              ...images,
+              {'type': 'text', 'text': prompt},
+            ],
+    },
+    'parent_tool_use_id': null,
+    'session_id': '',
+  };
+}
+
+/// The API's 5 MB image limit applies to the base64 text.
+const _maxInlineImageBytes = 5 * 1024 * 1024 * 3 ~/ 4;
+
+/// Null for files that aren't images, are too big or are gone; the agent
+/// can still open those from the path in the prompt.
+Json? _imageBlock(Attachment file) {
+  final type = file.imageType;
+  if (type == null || file.size > _maxInlineImageBytes) return null;
+  try {
+    return {
+      'type': 'image',
+      'source': {
+        'type': 'base64',
+        'media_type': type,
+        'data': base64Encode(File(file.path).readAsBytesSync()),
+      },
+    };
+  } on FileSystemException {
+    return null;
+  }
+}
 
 /// Commands that only make sense in Claude Code's interactive terminal.
 const _terminalOnly = {
