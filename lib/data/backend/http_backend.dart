@@ -43,6 +43,9 @@ class HttpAgentBackend implements AgentBackend {
   final Uri baseUrl;
   final String token;
   final Duration requestTimeout;
+
+  /// Requests carrying files may take a while over a slow link.
+  static const uploadTimeout = Duration(minutes: 3);
   final http.Client _client;
   final WebSocketChannel Function(Uri uri) _connectSocket;
 
@@ -237,8 +240,19 @@ class HttpAgentBackend implements AgentBackend {
       _watch(Topics.agentOptions, AgentOptions.fromJson);
 
   @override
-  Future<void> sendPrompt(String chatId, String text) =>
-      _request('POST', ApiPaths.prompt(chatId), body: {'text': text});
+  Future<void> sendPrompt(
+    String chatId,
+    String text, {
+    List<FileUpload> files = const [],
+  }) => _request(
+    'POST',
+    ApiPaths.prompt(chatId),
+    body: {
+      'text': text,
+      if (files.isNotEmpty) 'files': [for (final f in files) f.toJson()],
+    },
+    timeout: files.isEmpty ? null : uploadTimeout,
+  );
 
   @override
   Future<void> answerQuestion(
@@ -318,6 +332,7 @@ class HttpAgentBackend implements AgentBackend {
     String? agentId,
     String description = '',
     TodoLink? todo,
+    List<FileUpload> files = const [],
   }) async => AgentTask.fromJson(
     await _request(
       'POST',
@@ -328,7 +343,9 @@ class HttpAgentBackend implements AgentBackend {
         'agentId': ?agentId,
         if (description.isNotEmpty) 'description': description,
         if (todo != null) 'todo': todo.toJson(),
+        if (files.isNotEmpty) 'files': [for (final f in files) f.toJson()],
       },
+      timeout: files.isEmpty ? null : uploadTimeout,
     ),
   );
 
