@@ -119,6 +119,56 @@ void main() {
     );
   });
 
+  test('weekly limits split what was left this morning over the days left', () {
+    UsageLimits report(double used, DateTime at, {DateTime? resetsAt}) =>
+        UsageLimits(
+          windows: [
+            UsageWindow(
+              kind: 'seven_day',
+              utilization: used,
+              resetsAt: resetsAt ?? DateTime(2030, 1, 10),
+            ),
+            UsageWindow(kind: 'five_hour', utilization: used),
+          ],
+          updatedAt: at,
+        );
+
+    final yesterday = report(0.4, DateTime(2030, 1, 6, 20));
+    final morning = report(
+      0.5,
+      DateTime(2030, 1, 7, 10),
+    ).trackingDays(yesterday);
+    final later = report(0.6, DateTime(2030, 1, 7, 15)).trackingDays(morning);
+    expect(later.windows.first.dayStart, 0.4);
+    expect(later.windows.last.dayStart, isNull);
+    expect(UsageLimits.fromJson(later.toJson()).windows.first.dayStart, 0.4);
+
+    final today = later.dailyPace(
+      later.windows.first,
+      now: DateTime(2030, 1, 7, 16),
+    )!;
+    expect(today.used, closeTo(0.2, 1e-9));
+    expect(today.budget, closeTo(0.6 / 3, 1e-9));
+    expect(later.dailyPace(later.windows.last), isNull);
+
+    final tomorrow = later.dailyPace(
+      later.windows.first,
+      now: DateTime(2030, 1, 8, 9),
+    )!;
+    expect(tomorrow.used, 0);
+    expect(tomorrow.budget, closeTo(0.4 / 2, 1e-9));
+
+    final reset =
+        report(
+          0.05,
+          DateTime(2030, 1, 7, 15),
+          resetsAt: DateTime(2030, 1, 14),
+        ).trackingDays(
+          report(0.9, DateTime(2030, 1, 6), resetsAt: DateTime(2030, 1, 7, 12)),
+        );
+    expect(reset.windows.first.dayStart, 0);
+  });
+
   test('slash commands, model names and token counts read naturally', () {
     expect(parseSlashCommand('  /compact keep the plan '), (
       name: 'compact',
