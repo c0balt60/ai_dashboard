@@ -373,6 +373,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Usage limits'), findsOneWidget);
     expect(find.text('Current session'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
     expect(find.text('Compact now'), findsOneWidget);
   });
 

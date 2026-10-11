@@ -930,7 +930,7 @@ class MockAgentBackend implements AgentBackend {
               ),
           ],
           updatedAt: now,
-        ),
+        ).trackingDays(usage),
       );
     }
   }

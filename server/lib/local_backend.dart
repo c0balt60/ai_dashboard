@@ -1335,7 +1335,8 @@ class LocalAgentBackend implements AgentBackend {
       if (id == agentId ||
           (other?.type == source?.type &&
               other?.executable == source?.executable)) {
-        _agents[id] = _agents[id]!.copyWith(usage: usage);
+        final agent = _agents[id]!;
+        _agents[id] = agent.copyWith(usage: usage.trackingDays(agent.usage));
       }
     }
   }

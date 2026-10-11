@@ -560,6 +560,7 @@ class MockSeed {
         kind: 'seven_day',
         utilization: 0.61,
         resetsAt: now.add(const Duration(days: 3, hours: 5)),
+        dayStart: 0.55,
       ),
     ],
     updatedAt: _ago(minutes: 1),

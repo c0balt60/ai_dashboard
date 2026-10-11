@@ -7,12 +7,14 @@ class UsageWindow {
     required this.kind,
     required this.utilization,
     this.resetsAt,
+    this.dayStart,
   });
 
   factory UsageWindow.fromJson(Json json) => UsageWindow(
     kind: json['kind'] as String,
     utilization: (json['utilization'] as num).toDouble(),
     resetsAt: decodeTimeOrNull(json['resetsAt']),
+    dayStart: (json['dayStart'] as num?)?.toDouble(),
   );
 
   /// The CLI's name for the window, e.g. `five_hour` or `seven_day`.
@@ -21,6 +23,12 @@ class UsageWindow {
   /// The share used so far, from 0 to 1.
   final double utilization;
   final DateTime? resetsAt;
+
+  /// For a weekly window, the share used when the day of the last update
+  /// began, as far as the backend saw.
+  final double? dayStart;
+
+  bool get isWeekly => kind.startsWith('seven_day');
 
   double get remaining => (1 - utilization).clamp(0, 1).toDouble();
 
@@ -36,8 +44,13 @@ class UsageWindow {
     'kind': kind,
     'utilization': utilization,
     if (resetsAt != null) 'resetsAt': encodeTime(resetsAt!),
+    if (dayStart != null) 'dayStart': dayStart,
   };
 }
+
+/// How much of a weekly window to use today so that what was left when the
+/// day began lasts evenly until the reset, and how much of it is used.
+typedef DailyPace = ({double used, double budget});
 
 /// The usage limits an agent last reported, e.g. from Claude Code's rate
 /// limit events.
@@ -65,6 +78,60 @@ class UsageLimits {
     null,
     (best, w) => best == null || w.utilization > best.utilization ? w : best,
   );
+
+  /// These limits with each weekly window's [UsageWindow.dayStart] worked
+  /// out from the [previous] report: kept from earlier today, else the last
+  /// share seen before today, or 0 if the window has reset since. Without
+  /// one, today counts from now.
+  UsageLimits trackingDays(UsageLimits? previous) {
+    UsageWindow track(UsageWindow w) {
+      if (!w.isWeekly) return w;
+      final old = previous?.windows.where((o) => o.kind == w.kind).firstOrNull;
+      final start = switch (old) {
+        null => w.utilization,
+        UsageWindow(:final resetsAt?) when !resetsAt.isAfter(updatedAt) => 0.0,
+        _ when _sameDay(previous!.updatedAt, updatedAt) =>
+          old.dayStart ?? old.utilization,
+        _ => old.utilization,
+      };
+      return UsageWindow(
+        kind: w.kind,
+        utilization: w.utilization,
+        resetsAt: w.resetsAt,
+        dayStart: start,
+      );
+    }
+
+    return UsageLimits(
+      windows: [for (final w in windows) track(w)],
+      updatedAt: updatedAt,
+      limited: limited,
+    );
+  }
+
+  /// Today's [DailyPace] for weekly window [w]: what was left when today
+  /// began, split evenly over the time from then until the reset, so a reset
+  /// within a day leaves all of it for today.
+  DailyPace? dailyPace(UsageWindow w, {DateTime? now}) {
+    final resetsAt = w.resetsAt;
+    if (!w.isWeekly || resetsAt == null) return null;
+    now ??= DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final left = resetsAt.difference(today);
+    if (left <= Duration.zero) return null;
+    // A report from an earlier day means nothing was used since.
+    final start = _sameDay(updatedAt, now)
+        ? (w.dayStart ?? w.utilization)
+        : w.utilization;
+    final share = (const Duration(days: 1).inMinutes / left.inMinutes).clamp(
+      0.0,
+      1.0,
+    );
+    return (
+      used: (w.utilization - start).clamp(0.0, 1.0),
+      budget: (1 - start).clamp(0.0, 1.0) * share,
+    );
+  }
 
   Json toJson() => {
     'windows': [for (final w in windows) w.toJson()],
@@ -112,6 +179,11 @@ class ContextUsage {
     maxTokens: maxTokens ?? this.maxTokens,
     updatedAt: updatedAt ?? this.updatedAt,
   );
+}
+
+bool _sameDay(DateTime a, DateTime b) {
+  final x = a.toLocal(), y = b.toLocal();
+  return x.year == y.year && x.month == y.month && x.day == y.day;
 }
 
 /// A token count such as 35.3k or 1M.

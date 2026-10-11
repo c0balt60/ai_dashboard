@@ -183,7 +183,7 @@ class _UsageSheet extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  for (final w in usage.windows)
+                  for (final w in usage.windows) ...[
                     _Meter(
                       fraction: w.utilization,
                       title: w.label,
@@ -192,6 +192,23 @@ class _UsageSheet extends ConsumerWidget {
                           ? null
                           : 'Resets ${timeUntil(w.resetsAt!)}',
                     ),
+                    if (usage.dailyPace(w) case final pace?)
+                      _Meter(
+                        fraction: pace.budget <= 0
+                            ? 1
+                            : (pace.used / pace.budget).clamp(0.0, 1.0),
+                        title: w.label.replaceFirst('This week', 'Today'),
+                        trailing:
+                            '${_percent(pace.used)} of ${_percent(pace.budget)}',
+                        detail: pace.budget <= 0
+                            ? 'Nothing left until the reset'
+                            : pace.used > pace.budget
+                            ? '${_percent(pace.used - pace.budget)} over '
+                                  "today's even share of the week"
+                            : '${_percent(pace.budget - pace.used)} left of '
+                                  "today's even share of the week",
+                      ),
+                  ],
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
                     child: Text(
@@ -220,6 +237,13 @@ class _UsageSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// A share as a percentage, with a decimal below 10% so small daily shares
+/// don't round to nothing.
+String _percent(double share) {
+  final p = share * 100;
+  return p > 0 && p < 10 ? '${p.toStringAsFixed(1)}%' : '${p.round()}%';
 }
 
 /// A labelled bar colored by how much of it is used up.
