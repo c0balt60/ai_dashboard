@@ -41,6 +41,7 @@ class AgentTask {
     this.description = '',
     this.agentId,
     this.todo,
+    this.chatId,
     this.attachments = const [],
     this.progress = 0,
     this.steps = const [],
@@ -60,6 +61,7 @@ class AgentTask {
       final Json link => TodoLink.fromJson(link),
       _ => null,
     },
+    chatId: json['chatId'] as String?,
     attachments: decodeList(json['attachments'], Attachment.fromJson),
     progress: (json['progress'] as num? ?? 0).toDouble(),
     steps: decodeList(json['steps'], TaskStep.fromJson),
@@ -74,6 +76,9 @@ class AgentTask {
   final String projectId;
   final String? agentId;
   final TodoLink? todo;
+
+  /// The chat the task runs in, made for it when it first starts.
+  final String? chatId;
 
   /// Files the agent gets along with the [brief].
   final List<Attachment> attachments;
@@ -99,6 +104,7 @@ class AgentTask {
     'projectId': projectId,
     'agentId': ?agentId,
     if (todo case final link?) 'todo': link.toJson(),
+    'chatId': ?chatId,
     if (attachments.isNotEmpty)
       'attachments': [for (final a in attachments) a.toJson()],
     'state': state.name,
@@ -112,6 +118,7 @@ class AgentTask {
   AgentTask copyWith({
     TaskState? state,
     String? Function()? agentId,
+    String? chatId,
     double? progress,
     List<TaskStep>? steps,
     DateTime? updatedAt,
@@ -124,6 +131,7 @@ class AgentTask {
       description: description,
       projectId: projectId,
       todo: todo,
+      chatId: chatId ?? this.chatId,
       attachments: attachments ?? this.attachments,
       createdAt: createdAt,
       state: state ?? this.state,
