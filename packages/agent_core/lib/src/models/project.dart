@@ -11,6 +11,7 @@ class Project {
     required this.lastActivity,
     this.testRuns = const [],
     this.log = const [],
+    this.busyOnDesktop = false,
   });
 
   factory Project.fromJson(Json json) => Project(
@@ -21,6 +22,7 @@ class Project {
     lastActivity: decodeTime(json['lastActivity']),
     testRuns: decodeList(json['testRuns'], TestRun.fromJson),
     log: decodeList(json['log'], LogEntry.fromJson),
+    busyOnDesktop: json['busyOnDesktop'] as bool? ?? false,
   );
 
   final String id;
@@ -36,6 +38,10 @@ class Project {
   /// Newest first.
   final List<LogEntry> log;
 
+  /// Whether Claude Code is running a prompt in this folder that the server
+  /// didn't start, e.g. one typed on the PC itself.
+  final bool busyOnDesktop;
+
   TestRun? get latestTestRun => testRuns.isEmpty ? null : testRuns.first;
 
   Json toJson() => {
@@ -46,6 +52,7 @@ class Project {
     'lastActivity': encodeTime(lastActivity),
     'testRuns': [for (final r in testRuns) r.toJson()],
     'log': [for (final e in log) e.toJson()],
+    'busyOnDesktop': busyOnDesktop,
   };
 
   Project copyWith({
@@ -53,6 +60,7 @@ class Project {
     DateTime? lastActivity,
     List<TestRun>? testRuns,
     List<LogEntry>? log,
+    bool? busyOnDesktop,
   }) {
     return Project(
       id: id,
@@ -62,6 +70,7 @@ class Project {
       lastActivity: lastActivity ?? this.lastActivity,
       testRuns: testRuns ?? this.testRuns,
       log: log ?? this.log,
+      busyOnDesktop: busyOnDesktop ?? this.busyOnDesktop,
     );
   }
 }
