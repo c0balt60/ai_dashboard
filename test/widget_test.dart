@@ -224,6 +224,37 @@ void main() {
     expect(find.text('stripe-event.json'), findsNothing);
   });
 
+  testWidgets('command output stays clear of the system navigation bar', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    tester.view.padding = const FakeViewPadding(bottom: 48 * 3);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48 * 3);
+    ProviderScope.containerOf(tester.element(find.byType(App)))
+        .read(routerProvider)
+        .push(AppRoutes.project('p2'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Run command'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    for (var i = 0; i < 3; i++) {
+      await tester.enterText(find.byType(TextField), 'git status');
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    // The last run's scroll starts a frame after its output arrives.
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final output = find.ancestor(
+      of: find.byType(SelectableText),
+      matching: find.byType(Container),
+    );
+    expect(tester.getRect(output.first).bottom, lessThanOrEqualTo(780 - 48));
+  });
+
   testWidgets('back on another tab goes to the dashboard before exiting', (
     tester,
   ) async {

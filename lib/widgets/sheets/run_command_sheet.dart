@@ -33,6 +33,7 @@ class _RunCommandSheet extends ConsumerStatefulWidget {
 
 class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
   final _controller = TextEditingController();
+  final _sheetScroll = ScrollController();
   final _outputScroll = ScrollController();
   final _runs = <_Run>[];
   bool _running = false;
@@ -40,6 +41,7 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
   @override
   void dispose() {
     _controller.dispose();
+    _sheetScroll.dispose();
     _outputScroll.dispose();
     super.dispose();
   }
@@ -66,14 +68,18 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
       _running = false;
     });
 
-    // Wait for the new output to be laid out before scrolling to it.
+    // Wait for the new output to be laid out before scrolling to it. The
+    // sheet scrolls too, since on short screens the bottom of the output box
+    // would otherwise sit under the system navigation bar.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_outputScroll.hasClients) return;
-      _outputScroll.animateTo(
-        _outputScroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      for (final scroll in [_sheetScroll, _outputScroll]) {
+        if (!scroll.hasClients) continue;
+        scroll.animateTo(
+          scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -96,6 +102,7 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
       child: SafeArea(
         top: false,
         child: SingleChildScrollView(
+          controller: _sheetScroll,
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
