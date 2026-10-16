@@ -50,6 +50,10 @@ abstract final class ApiPaths {
   /// travel in the body so they never reach the request log.
   static const pushDevice = '/api/push/device';
   static const pushTest = '/api/push/test';
+
+  /// Claude Code's `PermissionRequest` hook for `AskUserQuestion` in sessions
+  /// the server didn't start. Held open until the owner answers on the phone.
+  static const desktopQuestion = '/api/desktop/question';
 }
 
 /// Names of the streams a client can subscribe to.
