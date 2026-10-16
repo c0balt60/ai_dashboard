@@ -381,11 +381,14 @@ class MockAgentBackend implements AgentBackend {
     }
     _agents[agentId] = updated;
 
-    final chat = _chatFor(agentId, projectId);
-    _addMessage(chat.id, MessageRole.system, 'Assigned to $workingDir');
+    _addMessage(
+      _chatFor(agentId, projectId).id,
+      MessageRole.system,
+      'Assigned to $workingDir',
+    );
     if (task != null) {
       _addMessage(
-        chat.id,
+        _taskChat(agentId, task).id,
         MessageRole.user,
         task.brief,
         attachments: task.attachments,
@@ -681,7 +684,7 @@ class MockAgentBackend implements AgentBackend {
       );
       if (agent.type == AgentType.claudeCode) {
         _useContext(
-          _chatFor(agent.id, task.projectId).id,
+          _taskChat(agent.id, updated).id,
           600 + _random.nextInt(1800),
         );
         _useLimits(0.001);
@@ -736,7 +739,7 @@ class MockAgentBackend implements AgentBackend {
       level: failed ? LogLevel.error : LogLevel.success,
     );
     _addMessage(
-      _chatFor(agent.id, task.projectId).id,
+      _taskChat(agent.id, task).id,
       MessageRole.agent,
       failed
           ? 'I could not finish "${task.title}": $failCount test(s) still fail. Can you take a look?'
@@ -775,7 +778,7 @@ class MockAgentBackend implements AgentBackend {
         lastActive: now,
       );
       _addMessage(
-        _chatFor(agent.id, project.id).id,
+        _taskChat(agent.id, task).id,
         MessageRole.user,
         task.brief,
         attachments: task.attachments,
@@ -970,6 +973,26 @@ class MockAgentBackend implements AgentBackend {
       ],
       updatedAt: now,
     );
+  }
+
+  /// The chat [task] runs in for [agentId]: its own while that still exists
+  /// and belongs to the agent, else a new one named after the task.
+  AgentChat _taskChat(String agentId, AgentTask task) {
+    if (_chats[task.chatId] case final chat? when chat.agentId == agentId) {
+      return chat;
+    }
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: task.projectId,
+      title: task.title,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _chats[chat.id] = chat;
+    _putTask(_tasks[task.id]!.copyWith(chatId: chat.id));
+    return chat;
   }
 
   /// The agent's most recent chat in [projectId], started if there is none.

@@ -1402,10 +1402,31 @@ class LocalAgentBackend implements AgentBackend {
     _notify();
   }
 
-  /// Runs [task] in the agent's latest chat for the task's project, posting
-  /// the task's title and notes there as the prompt.
+  /// The chat [task] runs in for [agentId]: its own while that still exists
+  /// and belongs to the agent, else a new one named after the task.
+  AgentChat _taskChat(String agentId, AgentTask task) {
+    if (_chats[task.chatId] case final chat? when chat.agentId == agentId) {
+      return chat;
+    }
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: task.projectId,
+      title: task.title,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _chats[chat.id] = chat;
+    _putTask(_tasks[task.id]!.copyWith(chatId: chat.id));
+    return chat;
+  }
+
+  /// Runs [task] in its own chat, posting the task's title and notes there
+  /// as the prompt.
   void _startTask(Agent agent, AgentTask task, String dir) {
-    final chat = _chatFor(agent.id, task.projectId);
+    final chat = _taskChat(agent.id, task);
+    task = _tasks[task.id]!;
     _addMessage(
       chat.id,
       MessageRole.user,
