@@ -217,6 +217,66 @@ void main() {
     expect(await busy(), isFalse);
   });
 
+  test('questions from desktop sessions wait in a Desktop chat until answered '
+      'on the phone or at the PC', () async {
+    final backend = create();
+    addTearDown(backend.dispose);
+    final transcript = File(p.join(dir.path, 'desktop.jsonl'));
+    void write(List<Json> content) => transcript.writeAsStringSync(
+      '${jsonEncode({
+        'type': 'assistant',
+        'message': {'content': content},
+      })}\n',
+      mode: FileMode.append,
+    );
+    Future<QuestionAnswer?> ask(String toolUseId) {
+      write([
+        {'type': 'tool_use', 'name': 'AskUserQuestion', 'id': toolUseId},
+      ]);
+      return backend.askFromDesktop({
+        'session_id': 'desktop',
+        'transcript_path': transcript.path,
+        'cwd': p.join(config.projects.single.path, 'lib'),
+        'tool_input': {
+          'questions': [
+            {
+              'question': 'Which database?',
+              'header': 'Database',
+              'options': [
+                {'label': 'Postgres'},
+                {'label': 'SQLite'},
+              ],
+            },
+          ],
+        },
+      });
+    }
+
+    final answer = ask('tu-1');
+    await settle();
+    final chat = (await backend.watchChats().first).singleWhere(
+      (c) => c.title == 'Desktop',
+    );
+    expect(chat.projectId, 'app');
+    final question = (await backend.watchMessages(chat.id).first).single;
+    expect(question.isOpenQuestion, isTrue);
+    expect((await agent(backend)).status, AgentStatus.waiting);
+
+    await backend.answerQuestion(chat.id, question.id, {
+      'Which database?': 'SQLite',
+    });
+    expect((await answer)!.answers, {'Which database?': 'SQLite'});
+    expect((await agent(backend)).status, AgentStatus.idle);
+
+    final atPc = ask('tu-2');
+    await settle();
+    write([
+      {'type': 'tool_result', 'tool_use_id': 'tu-2'},
+    ]);
+    expect(await atPc, isNull);
+    expect((await backend.watchMessages(chat.id).first).last.answers, isEmpty);
+  });
+
   test('attachments are saved in the project, ignored by git and deleted with '
       'their chat', () async {
     final project = config.projects.single.path;
