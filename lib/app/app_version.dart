@@ -4,4 +4,4 @@
 library;
 
 const appVersion = '3.3.0';
-const appBuildNumber = 19;
+const appBuildNumber = 20;
