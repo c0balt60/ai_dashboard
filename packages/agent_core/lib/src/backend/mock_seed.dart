@@ -143,6 +143,7 @@ class MockSeed {
       path: r'C:\dev\portfolio-site',
       branch: 'main',
       lastActivity: _ago(hours: 1),
+      busyOnDesktop: true,
       testRuns: [
         TestRun(
           id: 'r6',
