@@ -252,6 +252,10 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
     final project = projectId == null
         ? null
         : ref.watch(projectProvider(projectId));
+    final folderId = projectId ?? agent.projectId;
+    final desktopBusy =
+        folderId != null &&
+        (ref.watch(projectProvider(folderId))?.busyOnDesktop ?? false);
     final chatLabel = [
       ?project?.name,
       switch (chat) {
@@ -402,6 +406,11 @@ class _AgentChatScreenState extends ConsumerState<AgentChatScreen> {
                         ),
                 ),
               ),
+              if (desktopBusy)
+                const ContentWidth(
+                  maxWidth: _chatMaxWidth,
+                  child: _DesktopBusyBanner(),
+                ),
               if (chatId != null &&
                   chatId != _dismissedColdChat &&
                   agent.status != AgentStatus.running &&
@@ -468,6 +477,41 @@ class _MenuRow extends StatelessWidget {
         const SizedBox(width: 12),
         Flexible(child: Text(label)),
       ],
+    );
+  }
+}
+
+/// Shown above the composer while Claude Code is running a prompt of its own
+/// on the PC in this chat's folder, which a prompt from here could clash with.
+class _DesktopBusyBanner extends StatelessWidget {
+  const _DesktopBusyBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = StatusColors.of(context).running;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Material(
+        color: AppSurfaces.of(context).tint(accent, theme.brightness),
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Icon(Icons.desktop_windows_outlined, size: 20, color: accent),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Claude is running a prompt on your PC in this folder. '
+                  'Prompting here too may clash with it.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
