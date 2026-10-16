@@ -71,6 +71,15 @@ powershell -ExecutionPolicy Bypass -File server/tool/install_task.ps1
 
 This compiles the server to `server/ai_dashboard_server.exe` and registers a Task Scheduler task that runs it at log on, logging to `server/server.log`. Run it again after pulling changes to rebuild and restart. Remove it with `Unregister-ScheduledTask -TaskName AiDashboardServer`.
 
+### Answer Claude's questions from your phone
+
+```powershell
+cd server
+dart run tool/install_hook.dart
+```
+
+This adds a hook to your global `~/.claude/settings.json` (keeping the old file as `settings.json.bak`), so a question Claude Code asks in the terminal, VS Code or the desktop app also shows up in the agent's "Desktop" chat and as a notification. Answer it on either side: the PC's dialog stays open, and the phone's card goes away within a few seconds of answering at the PC. Run it again after changing the server's port or token.
+
 ## Build
 
 ```powershell
