@@ -378,6 +378,14 @@ void main() {
       var task = (await backend.watchTasks().first).single;
       expect(task.state, TaskState.active);
       expect(runner.turns.single.prompt, contains('Fix login'));
+      final chat = (await backend.watchChats().first).singleWhere(
+        (c) => c.id == task.chatId,
+      );
+      expect((chat.title, chat.projectId), ('Fix login', 'app'));
+      expect(
+        (await backend.watchMessages(chat.id).first).first.text,
+        contains('Fix login'),
+      );
 
       runner.turns.single.emit(
         const StepsEvent([
