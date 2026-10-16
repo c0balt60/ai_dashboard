@@ -451,6 +451,13 @@ class _TaskDetailsSheet extends ConsumerWidget {
     final agent = task.agentId == null
         ? null
         : ref.watch(agentProvider(task.agentId!));
+    final taskChat = switch (task.chatId) {
+      final id? => switch (ref.watch(chatProvider(id))) {
+        final chat? when chat.agentId == task.agentId => chat,
+        _ => null,
+      },
+      null => null,
+    };
     final doneColor = StatusColors.of(context).completed;
     final muted = theme.textTheme.bodyMedium?.copyWith(
       color: scheme.onSurfaceVariant,
@@ -627,11 +634,17 @@ class _TaskDetailsSheet extends ConsumerWidget {
                       final router = GoRouter.of(context);
                       Navigator.pop(context);
                       router.push(
-                        AppRoutes.agent(agent.id, projectId: task.projectId),
+                        AppRoutes.agent(
+                          agent.id,
+                          chatId: taskChat?.id,
+                          projectId: task.projectId,
+                        ),
                       );
                     },
                     icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('Open agent chat'),
+                    label: Text(
+                      taskChat == null ? 'Open agent chat' : 'Open task chat',
+                    ),
                   ),
                 if (canBacklog)
                   OutlinedButton.icon(
