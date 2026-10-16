@@ -354,6 +354,7 @@ void main() {
     container.read(routerProvider).push(AppRoutes.agent('a5', projectId: 'p3'));
     await _pumpChat(tester);
     expect(find.textContaining('in portfolio-site?'), findsOneWidget);
+    expect(find.textContaining('running a prompt on your PC'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'Add a sitemap');
     await tester.pump();

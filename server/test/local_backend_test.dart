@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard_server/config.dart';
+import 'package:ai_dashboard_server/desktop_sessions.dart';
 import 'package:ai_dashboard_server/local_backend.dart';
 import 'package:ai_dashboard_server/runners/agent_runner.dart';
 import 'package:ai_dashboard_server/state_store.dart';
@@ -96,11 +98,15 @@ void main() {
   late ServerConfig config;
   late FakeRunner runner;
 
-  LocalAgentBackend create() => LocalAgentBackend(
+  LocalAgentBackend create({String? claudeDir}) => LocalAgentBackend(
     config,
     runnerFor: (_) => runner,
     store: StateStore(config.dataDir, debounce: Duration.zero),
     branchOf: (_) async => 'main',
+    desktopDirs: ({ignore = const {}}) async => claudeDir == null
+        ? const []
+        : busyClaudeDirs(ignore: ignore, claudeDir: claudeDir),
+    desktopRefresh: const Duration(milliseconds: 10),
   );
 
   setUp(() async {
@@ -159,6 +165,56 @@ void main() {
 
     await backend.sendPrompt('claude', 'Thanks');
     expect(runner.turns.last.sessionId, 's-1');
+  });
+
+  test('a Claude prompt the server did not start marks its project busy '
+      'until its turn ends', () async {
+    final claudeDir = p.join(dir.path, 'claude');
+    final transcripts = Directory(p.join(claudeDir, 'projects', 'app'))
+      ..createSync(recursive: true);
+    final cwd = p.join(config.projects.single.path, 'lib');
+    void write(String session, List<(String, Object?)> turns) =>
+        File(p.join(transcripts.path, '$session.jsonl')).writeAsStringSync(
+          [
+            for (final (type, content) in turns)
+              jsonEncode({
+                'type': type,
+                'cwd': cwd,
+                'sessionId': session,
+                'message': {
+                  'content': content,
+                  if (type == 'assistant')
+                    'stop_reason': content == null ? 'end_turn' : 'tool_use',
+                },
+              }),
+            jsonEncode({'type': 'last-prompt', 'sessionId': session}),
+          ].join('\n'),
+        );
+    final backend = create(claudeDir: claudeDir);
+    addTearDown(() async {
+      backend.dispose();
+      // Lets a scan that is still reading let go of the transcripts, which
+      // Windows won't delete while they are open.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    Future<bool> busy() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      return (await backend.watchProjects().first).single.busyOnDesktop;
+    }
+
+    write('desktop', [('user', 'Fix the tests'), ('assistant', const [])]);
+    expect(await busy(), isTrue);
+
+    write('desktop', [('user', 'Fix the tests'), ('assistant', null)]);
+    expect(await busy(), isFalse);
+
+    write('desktop', [('user', 'Go on'), ('user', '[Request interrupted')]);
+    expect(await busy(), isFalse);
+
+    await backend.sendPrompt('claude', 'Explain main.dart');
+    runner.turns.single.emit(const SessionEvent('own'));
+    write('own', [('user', 'Explain main.dart')]);
+    expect(await busy(), isFalse);
   });
 
   test('attachments are saved in the project, ignored by git and deleted with '
