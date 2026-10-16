@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'attachments.dart';
 import 'config.dart';
+import 'desktop_sessions.dart';
 import 'process_utils.dart';
 import 'runners/agent_runner.dart';
 import 'state_store.dart';
@@ -39,6 +40,8 @@ class LocalAgentBackend implements AgentBackend {
     StateStore? store,
     this._branchOf = gitBranch,
     Duration branchRefresh = const Duration(minutes: 1),
+    this._desktopDirs = busyClaudeDirs,
+    Duration desktopRefresh = const Duration(seconds: 5),
   }) : _store = store ?? StateStore(config.dataDir) {
     final make = runnerFor ?? AgentRunner.forConfig;
     for (final a in config.agents) {
@@ -47,6 +50,8 @@ class LocalAgentBackend implements AgentBackend {
     _restore(_store.load());
     _refreshBranches();
     _branchTimer = Timer.periodic(branchRefresh, (_) => _refreshBranches());
+    _refreshDesktop();
+    _desktopTimer = Timer.periodic(desktopRefresh, (_) => _refreshDesktop());
     for (final id in [..._agents.keys]) {
       _discoverOptions(id);
       _startNextTask(id);
@@ -57,6 +62,8 @@ class LocalAgentBackend implements AgentBackend {
   final StateStore _store;
   final Future<String> Function(String dir) _branchOf;
   late final Timer _branchTimer;
+  final Future<List<String>> Function({Set<String> ignore}) _desktopDirs;
+  late final Timer _desktopTimer;
 
   final _runners = <String, AgentRunner>{};
   final _projectConfigs = <String, ProjectConfig>{};
@@ -1070,6 +1077,7 @@ class LocalAgentBackend implements AgentBackend {
   void dispose() {
     if (_disposed) return;
     _branchTimer.cancel();
+    _desktopTimer.cancel();
     for (final turn in _turns.values) {
       turn.cancel();
     }
@@ -1516,6 +1524,26 @@ class LocalAgentBackend implements AgentBackend {
       final value = branch.isEmpty ? null : branch;
       if (agent.branch != value) {
         _agents[id] = agent.copyWith(branch: () => value);
+        changed = true;
+      }
+    }
+    if (changed) _notify();
+  }
+
+  /// Marks the projects where Claude Code is running a prompt of its own,
+  /// i.e. in a session none of the chats here started.
+  Future<void> _refreshDesktop() async {
+    final dirs = await _desktopDirs(
+      ignore: {for (final s in _sessions.values) s.id},
+    );
+    if (_disposed) return;
+    var changed = false;
+    for (final project in [..._projects.values]) {
+      final busy = dirs.any(
+        (d) => p.equals(d, project.path) || p.isWithin(project.path, d),
+      );
+      if (busy != project.busyOnDesktop) {
+        _projects[project.id] = project.copyWith(busyOnDesktop: busy);
         changed = true;
       }
     }
