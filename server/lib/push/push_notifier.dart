@@ -127,8 +127,12 @@ class PushNotifier {
     if (previous == null) return;
     for (final agent in agents) {
       final before = previous[agent.id];
+      // A question from a desktop session can make an idle agent wait.
+      final asks =
+          agent.status == AgentStatus.waiting &&
+          before?.status != AgentStatus.waiting;
       if (before == null ||
-          before.status != AgentStatus.running ||
+          (before.status != AgentStatus.running && !asks) ||
           agent.status == AgentStatus.running) {
         continue;
       }

@@ -10,6 +10,7 @@ import 'package:shelf_static/shelf_static.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'local_backend.dart';
 import 'push/push_notifier.dart';
 
 /// The server's HTTP entry point.
@@ -254,6 +255,29 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
       (Request r) => action(r, (b) {
         push?.register(PushDevice.fromJson(b));
         return {'enabled': push?.canSend ?? false};
+      }),
+    )
+    ..post(
+      ApiPaths.desktopQuestion,
+      (Request r) => action(r, (b) async {
+        final answer = backend is LocalAgentBackend
+            ? await backend.askFromDesktop(b)
+            : null;
+        // An empty reply leaves the question to the dialog at the PC.
+        if (answer == null) return const <String, Object?>{};
+        return {
+          'hookSpecificOutput': {
+            'hookEventName': 'PermissionRequest',
+            'decision': {
+              'behavior': 'allow',
+              'updatedInput': {
+                ...?b['tool_input'] as Json?,
+                'answers': answer.answers,
+                'response': ?answer.response,
+              },
+            },
+          },
+        };
       }),
     )
     ..post(ApiPaths.pushTest, (Request r) {

@@ -41,7 +41,7 @@ class LocalAgentBackend implements AgentBackend {
     this._branchOf = gitBranch,
     Duration branchRefresh = const Duration(minutes: 1),
     this._desktopDirs = busyClaudeDirs,
-    Duration desktopRefresh = const Duration(seconds: 5),
+    this._desktopRefresh = const Duration(seconds: 5),
   }) : _store = store ?? StateStore(config.dataDir) {
     final make = runnerFor ?? AgentRunner.forConfig;
     for (final a in config.agents) {
@@ -51,7 +51,7 @@ class LocalAgentBackend implements AgentBackend {
     _refreshBranches();
     _branchTimer = Timer.periodic(branchRefresh, (_) => _refreshBranches());
     _refreshDesktop();
-    _desktopTimer = Timer.periodic(desktopRefresh, (_) => _refreshDesktop());
+    _desktopTimer = Timer.periodic(_desktopRefresh, (_) => _refreshDesktop());
     for (final id in [..._agents.keys]) {
       _discoverOptions(id);
       _startNextTask(id);
@@ -63,6 +63,7 @@ class LocalAgentBackend implements AgentBackend {
   final Future<String> Function(String dir) _branchOf;
   late final Timer _branchTimer;
   final Future<List<String>> Function({Set<String> ignore}) _desktopDirs;
+  final Duration _desktopRefresh;
   late final Timer _desktopTimer;
 
   final _runners = <String, AgentRunner>{};
@@ -90,6 +91,10 @@ class LocalAgentBackend implements AgentBackend {
   /// turn knows the question by.
   final _openQuestions =
       <String, ({String agentId, String chatId, String id})>{};
+
+  /// The open questions relayed from Claude Code sessions this server didn't
+  /// start, completed with the owner's answer.
+  final _desktopQuestions = <String, Completer<QuestionAnswer>>{};
   final _testing = <String>{};
   final _changes = StreamController<void>.broadcast();
   var _idCounter = 0;
@@ -415,7 +420,9 @@ class LocalAgentBackend implements AgentBackend {
     }
     _thinking.remove(agentId);
     _openQuestions.removeWhere((messageId, q) {
-      if (q.agentId != agentId) return false;
+      if (q.agentId != agentId || _desktopQuestions.containsKey(messageId)) {
+        return false;
+      }
       _updateMessage(q.chatId, messageId, (m) => m.copyWith(answers: () => {}));
       return true;
     });
@@ -555,6 +562,110 @@ class LocalAgentBackend implements AgentBackend {
     _notify();
   }
 
+  /// Relays a question Claude Code asks in a session this server didn't
+  /// start, given its `PermissionRequest` hook input, to a Claude agent's
+  /// "Desktop" chat in the session's project (or its general chat outside
+  /// every project).
+  ///
+  /// Completes with the owner's answer, or null when no Claude agent can take
+  /// it, the session is one of the server's own, or the transcript shows the
+  /// question was answered at the PC first.
+  Future<QuestionAnswer?> askFromDesktop(Json hook) async {
+    final input = hook['tool_input'] as Json? ?? const {};
+    final questions = [
+      for (final q in input['questions'] as List? ?? const [])
+        AgentQuestion.fromJson(q as Json),
+    ];
+    if (questions.isEmpty ||
+        _sessions.values.any((s) => s.id == hook['session_id'])) {
+      return null;
+    }
+    final cwd = hook['cwd'] as String? ?? '';
+    final project = _projects.values
+        .where((pr) => p.equals(cwd, pr.path) || p.isWithin(pr.path, cwd))
+        .firstOrNull;
+    final claudes = _agents.values.where((a) => a.type == AgentType.claudeCode);
+    final agent =
+        claudes.where((a) => a.projectIds.contains(project?.id)).firstOrNull ??
+        claudes.firstOrNull;
+    if (agent == null) return null;
+
+    final transcript = hook['transcript_path'] as String? ?? '';
+    var asked = await openQuestionId(transcript);
+    final chatId = project == null
+        ? agent.id
+        : _desktopChat(agent.id, project.id).id;
+    final messageId = _addMessage(
+      chatId,
+      MessageRole.question,
+      describeQuestions(questions),
+      questions: questions,
+    )!;
+    _openQuestions[messageId] = (agentId: agent.id, chatId: chatId, id: '');
+    final answered = _desktopQuestions[messageId] = Completer();
+    const waitingActivity = 'Waiting for your answer on the PC';
+    if (!_turns.containsKey(agent.id)) {
+      _agents[agent.id] = agent.copyWith(
+        status: AgentStatus.waiting,
+        activity: waitingActivity,
+        lastActive: DateTime.now(),
+      );
+    }
+    _notify();
+
+    // ponytail: a session closed at the PC leaves its question open until
+    // it is answered here or the server restarts.
+    while (!answered.isCompleted && !_disposed) {
+      await Future.any([answered.future, Future.delayed(_desktopRefresh)]);
+      if (answered.isCompleted || _disposed) break;
+      final open = await openQuestionId(transcript);
+      asked ??= open;
+      if (asked != null && open != asked) break;
+    }
+
+    if (_agents[agent.id] case final now?
+        when now.status == AgentStatus.waiting &&
+            now.activity == waitingActivity &&
+            !_turns.containsKey(agent.id)) {
+      _agents[agent.id] = now.copyWith(
+        status: agent.status,
+        activity: agent.activity,
+      );
+    }
+    if (answered.isCompleted) {
+      _notify();
+      return answered.future;
+    }
+    _desktopQuestions.remove(messageId);
+    if (_openQuestions.remove(messageId) != null) {
+      _updateMessage(chatId, messageId, (m) => m.copyWith(answers: () => {}));
+    }
+    _notify();
+    return null;
+  }
+
+  /// The agent's chat for questions from desktop sessions in [projectId].
+  AgentChat _desktopChat(String agentId, String projectId) {
+    const title = 'Desktop';
+    for (final c in _chats.values) {
+      if (c.agentId == agentId &&
+          c.projectId == projectId &&
+          c.title == title) {
+        return c;
+      }
+    }
+    final now = DateTime.now();
+    final chat = AgentChat(
+      id: _nextId('c'),
+      agentId: agentId,
+      projectId: projectId,
+      title: title,
+      createdAt: now,
+      updatedAt: now,
+    );
+    return _chats[chat.id] = chat;
+  }
+
   /// Hands the answers to the turn that asked, which carries on with them.
   void _answer(
     String messageId,
@@ -567,6 +678,12 @@ class LocalAgentBackend implements AgentBackend {
       messageId,
       (m) => m.copyWith(answers: () => answers),
     );
+    if (_desktopQuestions.remove(messageId) case final desktop?) {
+      desktop.complete(
+        QuestionAnswer(open.id, answers: answers, response: response),
+      );
+      return;
+    }
     final turn = _turns[open.agentId];
     final sent =
         turn != null &&
