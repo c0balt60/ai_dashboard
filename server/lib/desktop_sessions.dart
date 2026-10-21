@@ -57,8 +57,42 @@ Future<List<String>> busyClaudeDirs({
   return dirs;
 }
 
-/// The folder [transcript] works in if its last turn hasn't ended.
-Future<String?> _openTurnDir(File transcript) async {
+/// The id of the `AskUserQuestion` call in [transcript] that has no answer
+/// yet, or null when there is none (or the file can't be read).
+Future<String?> openQuestionId(String transcript) async {
+  final List<String> lines;
+  try {
+    lines = await _tailLines(File(transcript));
+  } on FileSystemException {
+    return null;
+  }
+  final open = <String>[];
+  for (final line in lines) {
+    final Object? entry;
+    try {
+      entry = jsonDecode(line);
+    } on FormatException {
+      continue;
+    }
+    if (entry case {'message': {'content': final List content}}) {
+      for (final block in content) {
+        switch (block) {
+          case {
+            'type': 'tool_use',
+            'name': 'AskUserQuestion',
+            'id': final String id,
+          }:
+            open.add(id);
+          case {'type': 'tool_result', 'tool_use_id': final String id}:
+            open.remove(id);
+        }
+      }
+    }
+  }
+  return open.lastOrNull;
+}
+
+Future<List<String>> _tailLines(File transcript) async {
   final file = await transcript.open();
   final List<int> bytes;
   try {
@@ -67,7 +101,12 @@ Future<String?> _openTurnDir(File transcript) async {
   } finally {
     await file.close();
   }
-  final lines = utf8.decode(bytes, allowMalformed: true).split('\n');
+  return utf8.decode(bytes, allowMalformed: true).split('\n');
+}
+
+/// The folder [transcript] works in if its last turn hasn't ended.
+Future<String?> _openTurnDir(File transcript) async {
+  final lines = await _tailLines(transcript);
   for (final line in lines.reversed) {
     final Object? entry;
     try {

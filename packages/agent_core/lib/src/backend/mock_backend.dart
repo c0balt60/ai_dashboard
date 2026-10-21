@@ -636,6 +636,16 @@ class MockAgentBackend implements AgentBackend {
   }
 
   @override
+  Future<void> setQuickCommands(String projectId, List<String> commands) async {
+    final project = _projects[projectId];
+    if (project == null) return;
+    _projects[projectId] = project.copyWith(
+      quickCommands: Project.cleanCommands(commands),
+    );
+    _notify();
+  }
+
+  @override
   Future<Duration> ping() async {
     final rtt = Duration(milliseconds: 18 + _random.nextInt(40));
     await Future<void>.delayed(latency == Duration.zero ? Duration.zero : rtt);

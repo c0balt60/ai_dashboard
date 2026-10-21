@@ -12,7 +12,23 @@ class Project {
     this.testRuns = const [],
     this.log = const [],
     this.busyOnDesktop = false,
+    this.quickCommands = defaultQuickCommands,
   });
+
+  static const defaultQuickCommands = [
+    'git status',
+    'git log',
+    'git branch',
+    'flutter test',
+    'npm test',
+  ];
+
+  /// [commands] trimmed, without blanks and repeats.
+  static List<String> cleanCommands(Iterable<String> commands) =>
+      List.unmodifiable({
+        for (final c in commands)
+          if (c.trim().isNotEmpty) c.trim(),
+      });
 
   factory Project.fromJson(Json json) => Project(
     id: json['id'] as String,
@@ -23,6 +39,9 @@ class Project {
     testRuns: decodeList(json['testRuns'], TestRun.fromJson),
     log: decodeList(json['log'], LogEntry.fromJson),
     busyOnDesktop: json['busyOnDesktop'] as bool? ?? false,
+    quickCommands: json.containsKey('quickCommands')
+        ? decodeStrings(json['quickCommands'])
+        : defaultQuickCommands,
   );
 
   final String id;
@@ -42,6 +61,9 @@ class Project {
   /// didn't start, e.g. one typed on the PC itself.
   final bool busyOnDesktop;
 
+  /// The owner's shortcuts in the Run command sheet, in their order.
+  final List<String> quickCommands;
+
   TestRun? get latestTestRun => testRuns.isEmpty ? null : testRuns.first;
 
   Json toJson() => {
@@ -53,6 +75,7 @@ class Project {
     'testRuns': [for (final r in testRuns) r.toJson()],
     'log': [for (final e in log) e.toJson()],
     'busyOnDesktop': busyOnDesktop,
+    'quickCommands': quickCommands,
   };
 
   Project copyWith({
@@ -61,6 +84,7 @@ class Project {
     List<TestRun>? testRuns,
     List<LogEntry>? log,
     bool? busyOnDesktop,
+    List<String>? quickCommands,
   }) {
     return Project(
       id: id,
@@ -71,6 +95,7 @@ class Project {
       testRuns: testRuns ?? this.testRuns,
       log: log ?? this.log,
       busyOnDesktop: busyOnDesktop ?? this.busyOnDesktop,
+      quickCommands: quickCommands ?? this.quickCommands,
     );
   }
 }
