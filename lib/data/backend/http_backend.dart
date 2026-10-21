@@ -418,6 +418,14 @@ class HttpAgentBackend implements AgentBackend {
   }
 
   @override
+  Future<void> setQuickCommands(String projectId, List<String> commands) =>
+      _request(
+        'PUT',
+        ApiPaths.quickCommands(projectId),
+        body: {'commands': commands},
+      );
+
+  @override
   Future<Duration> ping() async {
     final watch = Stopwatch()..start();
     await _request('GET', ApiPaths.ping);

@@ -255,6 +255,39 @@ void main() {
     expect(tester.getRect(output.first).bottom, lessThanOrEqualTo(780 - 48));
   });
 
+  testWidgets('quick commands can be added and deleted per project', (
+    tester,
+  ) async {
+    await _pumpApp(tester, physicalSize: const Size(1080, 2340), pixelRatio: 3);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(App)),
+    );
+    container.read(routerProvider).push(AppRoutes.project('p2'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Run command'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.text('Edit'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Delete').first);
+    await tester.pump();
+    await tester.tap(find.text('Add command'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(find.byType(TextField).last, '  make lint ');
+    await tester.tap(find.text('Save'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+
+    expect(container.read(projectProvider('p2'))?.quickCommands, [
+      ...Project.defaultQuickCommands.skip(1),
+      'make lint',
+    ]);
+    expect(find.widgetWithText(ActionChip, 'make lint'), findsOneWidget);
+    expect(find.widgetWithText(ActionChip, 'git status'), findsNothing);
+  });
+
   testWidgets('back on another tab goes to the dashboard before exiting', (
     tester,
   ) async {

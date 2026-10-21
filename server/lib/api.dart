@@ -251,6 +251,13 @@ Router _apiRouter(AgentBackend backend, PushNotifier? push) {
       }),
     )
     ..put(
+      ApiPaths.quickCommands('<id>'),
+      (Request r, String id) => action(
+        r,
+        (b) => backend.setQuickCommands(id, decodeStrings(b['commands'])),
+      ),
+    )
+    ..put(
       ApiPaths.pushDevice,
       (Request r) => action(r, (b) {
         push?.register(PushDevice.fromJson(b));

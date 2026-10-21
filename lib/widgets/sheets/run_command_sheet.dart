@@ -1,24 +1,19 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/models/models.dart';
 import '../../providers/backend_providers.dart';
 import 'app_sheet.dart';
 
 /// Runs a shell command in a project folder on the PC and shows its output.
+/// The project's quick commands can be edited, reordered and reset here.
 Future<void> showRunCommandSheet(BuildContext context, String projectId) {
   return showAppSheet<void>(
     context: context,
     builder: (_) => _RunCommandSheet(projectId),
   );
 }
-
-const _quickCommands = [
-  'git status',
-  'git log',
-  'git branch',
-  'flutter test',
-  'npm test',
-];
 
 typedef _Run = ({String command, String output, bool failed});
 
@@ -37,6 +32,11 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
   final _outputScroll = ScrollController();
   final _runs = <_Run>[];
   bool _running = false;
+  bool _editing = false;
+
+  /// The owner's last edit to the quick commands, shown straight away rather
+  /// than after the PC sends the project back.
+  List<String>? _commands;
 
   @override
   void dispose() {
@@ -83,11 +83,41 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
     });
   }
 
+  Future<void> _saveCommands(List<String> commands) async {
+    final cleaned = Project.cleanCommands(commands);
+    setState(() => _commands = cleaned);
+    try {
+      await ref
+          .read(backendProvider)
+          .setQuickCommands(widget.projectId, cleaned);
+    } catch (_) {
+      if (mounted) setState(() => _commands = null);
+      rethrow;
+    }
+  }
+
+  /// Edits the command at [index], or adds one without it.
+  Future<void> _editCommand(List<String> commands, [int? index]) async {
+    final text = await showDialog<String>(
+      context: context,
+      builder: (_) => _CommandDialog(index == null ? '' : commands[index]),
+    );
+    if (text == null || text.trim().isEmpty) return;
+    final updated = [...commands];
+    if (index == null) {
+      updated.add(text);
+    } else {
+      updated[index] = text;
+    }
+    await _saveCommands(updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final project = ref.watch(projectProvider(widget.projectId));
+    final commands = _commands ?? project?.quickCommands ?? const <String>[];
     const mono = TextStyle(fontFamily: 'monospace');
     // The theme paints unselected chips in the card color, which is also the
     // sheet color, so these chips need their own fill to stay visible.
@@ -134,19 +164,91 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
                 onSubmitted: (_) => _run(),
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  for (final command in _quickCommands)
+              if (_editing) ...[
+                ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  onReorderItem: (from, to) => _saveCommands(
+                    [...commands]
+                      ..removeAt(from)
+                      ..insert(to, commands[from]),
+                  ),
+                  children: [
+                    for (final (i, command) in commands.indexed)
+                      ListTile(
+                        key: ValueKey(command),
+                        contentPadding: EdgeInsets.zero,
+                        leading: ReorderableDragStartListener(
+                          index: i,
+                          child: const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Icon(Icons.drag_handle),
+                          ),
+                        ),
+                        title: Text(
+                          command,
+                          style: mono,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () => _editCommand(commands, i),
+                        trailing: IconButton(
+                          tooltip: 'Delete',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () =>
+                              _saveCommands([...commands]..removeAt(i)),
+                        ),
+                      ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => _editCommand(commands),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add command'),
+                    ),
+                    if (!listEquals(commands, Project.defaultQuickCommands))
+                      TextButton.icon(
+                        onPressed: () =>
+                            _saveCommands(Project.defaultQuickCommands),
+                        icon: const Icon(Icons.restore),
+                        label: const Text('Reset to defaults'),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => setState(() => _editing = false),
+                      icon: const Icon(Icons.check),
+                      label: const Text('Done'),
+                    ),
+                  ],
+                ),
+              ] else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final command in commands)
+                      ActionChip(
+                        color: chipColor,
+                        avatar: const Icon(Icons.bolt, size: 16),
+                        label: Text(command, style: mono),
+                        onPressed: _running ? null : () => _run(command),
+                      ),
                     ActionChip(
                       color: chipColor,
-                      avatar: const Icon(Icons.bolt, size: 16),
-                      label: Text(command, style: mono),
-                      onPressed: _running ? null : () => _run(command),
+                      avatar: const Icon(Icons.edit_outlined, size: 16),
+                      label: Text(
+                        commands.isEmpty ? 'Add quick commands' : 'Edit',
+                      ),
+                      tooltip: 'Edit quick commands',
+                      onPressed: project == null
+                          ? null
+                          : () => setState(() => _editing = true),
                     ),
-                ],
-              ),
+                  ],
+                ),
               const SizedBox(height: 12),
               ValueListenableBuilder(
                 valueListenable: _controller,
@@ -184,6 +286,56 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CommandDialog extends StatefulWidget {
+  const _CommandDialog(this.initial);
+
+  final String initial;
+
+  @override
+  State<_CommandDialog> createState() => _CommandDialogState();
+}
+
+class _CommandDialogState extends State<_CommandDialog> {
+  late final _command = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _command.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const mono = TextStyle(fontFamily: 'monospace');
+    return AlertDialog(
+      title: Text(widget.initial.isEmpty ? 'Add command' : 'Edit command'),
+      content: TextField(
+        controller: _command,
+        autofocus: true,
+        autocorrect: false,
+        enableSuggestions: false,
+        style: mono,
+        decoration: const InputDecoration(
+          prefixText: '\$ ',
+          prefixStyle: mono,
+          hintText: 'git status',
+        ),
+        onSubmitted: (value) => Navigator.pop(context, value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _command.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

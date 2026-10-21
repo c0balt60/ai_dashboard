@@ -45,6 +45,8 @@ abstract final class ApiPaths {
 
   static String runCommand(String projectId) =>
       '/api/projects/$projectId/commands';
+  static String quickCommands(String projectId) =>
+      '/api/projects/$projectId/quick-commands';
 
   /// Registers a [PushDevice]; an empty event set unregisters it. Tokens
   /// travel in the body so they never reach the request log.

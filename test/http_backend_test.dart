@@ -100,6 +100,10 @@ void main() {
     expect(claude.effort, isNull);
 
     expect(await backend.runCommand('p1', 'git status'), isNotEmpty);
+    await backend.setQuickCommands('p1', ['make lint']);
+    expect((await mock.watchProjects().first).first.quickCommands, [
+      'make lint',
+    ]);
     expect(await backend.ping(), isA<Duration>());
   });
 

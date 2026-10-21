@@ -503,6 +503,7 @@ void main() {
     await settle();
     await first.createTask('Long job', 'app', agentId: 'claude');
     await first.createTodoList('Release');
+    await first.setQuickCommands('app', [' make lint', '', 'make lint']);
     first.dispose();
 
     runner = FakeRunner();
@@ -512,6 +513,9 @@ void main() {
     final messages = await second.watchMessages('claude').first;
     expect(messages.first.text, 'Remember me');
     expect((await second.watchTodoLists().first).single.title, 'Release');
+    expect((await second.watchProjects().first).single.quickCommands, [
+      'make lint',
+    ]);
     final task = (await second.watchTasks().first).single;
     expect(task.state, TaskState.active, reason: 'restarted on boot');
     expect(

@@ -133,6 +133,10 @@ abstract interface class AgentBackend {
 
   Future<String> runCommand(String projectId, String command);
 
+  /// Replaces the project's [Project.quickCommands]. Blank and repeated
+  /// commands are dropped.
+  Future<void> setQuickCommands(String projectId, List<String> commands);
+
   Future<Duration> ping();
 
   void setSimulationEnabled(bool enabled);

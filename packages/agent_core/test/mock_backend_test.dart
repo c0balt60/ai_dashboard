@@ -91,6 +91,11 @@ void main() {
     expect(moved.projectId, isNull);
     expect(moved.projectIds, ['p1', 'p2']);
 
+    final p1 = (await backend.watchProjects().first).first;
+    expect(p1.quickCommands, Project.defaultQuickCommands);
+    await backend.setQuickCommands('p1', ['make', ' make ', '  ']);
+    expect((await backend.watchProjects().first).first.quickCommands, ['make']);
+
     await backend.deleteChat('a5');
     await backend.deleteChat(chat.id);
     final left = await backend.watchChats().first;

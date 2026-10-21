@@ -126,6 +126,7 @@ class LocalAgentBackend implements AgentBackend {
             if (r.status != TestStatus.running) r,
         ],
         log: old?.log ?? const [],
+        quickCommands: old?.quickCommands ?? Project.defaultQuickCommands,
       );
     }
 
@@ -1181,6 +1182,17 @@ class LocalAgentBackend implements AgentBackend {
       else if (result.exitCode != 0)
         '[exit code ${result.exitCode}]',
     ].where((s) => s.isNotEmpty).join('\n');
+  }
+
+  @override
+  Future<void> setQuickCommands(String projectId, List<String> commands) async {
+    final project =
+        _projects[projectId] ??
+        (throw ArgumentError('Unknown project $projectId'));
+    _projects[projectId] = project.copyWith(
+      quickCommands: Project.cleanCommands(commands),
+    );
+    _notify();
   }
 
   @override
