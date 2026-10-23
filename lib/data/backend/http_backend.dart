@@ -199,6 +199,15 @@ class HttpAgentBackend implements AgentBackend {
       throw BackendException("Can't reach the PC: $e");
     }
 
+    // The API only answers 404 for routes it doesn't have, which means the
+    // server was built before this app version added them.
+    if (response.statusCode == 404) {
+      throw BackendException(
+        'The PC server is out of date. Rebuild it with '
+        'server/tool/install_task.ps1.',
+        statusCode: 404,
+      );
+    }
     final decoded = response.body.isEmpty
         ? const <String, Object?>{}
         : jsonDecode(response.body);

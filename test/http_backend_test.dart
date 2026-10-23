@@ -5,6 +5,8 @@ import 'package:agent_core/agent_core.dart';
 import 'package:ai_dashboard/data/backend/http_backend.dart';
 import 'package:ai_dashboard_server/api.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -125,6 +127,27 @@ void main() {
         isA<BackendException>()
             .having((e) => e.statusCode, 'statusCode', 401)
             .having((e) => e.message, 'message', 'Unauthorized'),
+      ),
+    );
+  });
+
+  test('a server missing a route is reported as out of date', () async {
+    final stale = HttpAgentBackend(
+      baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+      token: token,
+      client: MockClient(
+        (_) async => http.Response('{"error":"Not found"}', 404),
+      ),
+    );
+    addTearDown(stale.dispose);
+    await expectLater(
+      stale.setQuickCommands('p1', ['make lint']),
+      throwsA(
+        isA<BackendException>().having(
+          (e) => e.message,
+          'message',
+          contains('out of date'),
+        ),
       ),
     );
   });
