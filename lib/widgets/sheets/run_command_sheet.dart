@@ -37,6 +37,7 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
   /// The owner's last edit to the quick commands, shown straight away rather
   /// than after the PC sends the project back.
   List<String>? _commands;
+  String? _saveError;
 
   @override
   void dispose() {
@@ -85,14 +86,21 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
 
   Future<void> _saveCommands(List<String> commands) async {
     final cleaned = Project.cleanCommands(commands);
-    setState(() => _commands = cleaned);
+    setState(() {
+      _commands = cleaned;
+      _saveError = null;
+    });
     try {
       await ref
           .read(backendProvider)
           .setQuickCommands(widget.projectId, cleaned);
-    } catch (_) {
-      if (mounted) setState(() => _commands = null);
-      rethrow;
+    } catch (e) {
+      // The app's snackbar would sit hidden under this sheet.
+      if (!mounted) rethrow;
+      setState(() {
+        _commands = null;
+        _saveError = "Couldn't save quick commands: $e";
+      });
     }
   }
 
@@ -249,6 +257,15 @@ class _RunCommandSheetState extends ConsumerState<_RunCommandSheet> {
                     ),
                   ],
                 ),
+              if (_saveError case final error?) ...[
+                const SizedBox(height: 8),
+                Text(
+                  error,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               ValueListenableBuilder(
                 valueListenable: _controller,
